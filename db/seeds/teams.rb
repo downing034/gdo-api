@@ -1,6 +1,6 @@
 mlb = League.find_by!(code: 'mlb')
 
-teams = [
+mlb_teams = [
   { code: 'ATH', location_name: '',  nickname: 'Athletics' },
   { code: 'ARI', location_name: 'Arizona', nickname: 'Diamondbacks' },
   { code: 'ATL', location_name: 'Atlanta', nickname: 'Braves' },
@@ -33,7 +33,7 @@ teams = [
   { code: 'WSN', location_name: 'Washington', nickname: 'Nationals' }
 ]
 
-teams.each do |attrs|
+mlb_teams.each do |attrs|
   Team.find_or_create_by!(code: attrs[:code], league: mlb) do |t|
     t.location_name = attrs[:location_name]
     t.nickname = attrs[:nickname]
