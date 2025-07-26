@@ -10,10 +10,22 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_07_26_015039) do
+ActiveRecord::Schema[8.0].define(version: 2025_07_26_021215) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
+
+  create_table "leagues", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "sport_id", null: false
+    t.string "code"
+    t.string "name"
+    t.string "display_name"
+    t.boolean "has_conferences"
+    t.boolean "active"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["sport_id"], name: "index_leagues_on_sport_id"
+  end
 
   create_table "sports", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.string "code"
@@ -21,4 +33,6 @@ ActiveRecord::Schema[8.0].define(version: 2025_07_26_015039) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
   end
+
+  add_foreign_key "leagues", "sports"
 end
