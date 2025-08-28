@@ -10,54 +10,58 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_07_26_044538) do
+ActiveRecord::Schema[8.0].define(version: 2025_08_28_195413) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
 
   create_table "leagues", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.uuid "sport_id", null: false
-    t.string "code"
-    t.string "name"
+    t.string "code", null: false
+    t.string "name", null: false
     t.string "display_name"
     t.boolean "has_conferences"
-    t.boolean "active"
+    t.boolean "active", null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.index ["sport_id", "code"], name: "index_leagues_on_sport_id_and_code", unique: true
     t.index ["sport_id"], name: "index_leagues_on_sport_id"
   end
 
   create_table "sports", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
-    t.string "code"
-    t.string "name"
+    t.string "code", null: false
+    t.string "name", null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.index ["code"], name: "index_sports_on_code", unique: true
   end
 
   create_table "teams", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
-    t.string "code"
-    t.string "location_name"
-    t.string "nickname"
-    t.boolean "active"
+    t.string "code", null: false
+    t.string "location_name", null: false
+    t.string "nickname", null: false
+    t.boolean "active", null: false
     t.uuid "league_id", null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.index ["league_id", "code"], name: "index_teams_on_league_id_and_code", unique: true
     t.index ["league_id"], name: "index_teams_on_league_id"
   end
 
   create_table "venues", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
-    t.string "name"
+    t.string "name", null: false
     t.string "city"
     t.string "region"
     t.string "country"
     t.integer "capacity"
     t.string "surface"
     t.boolean "indoor"
-    t.boolean "is_active"
+    t.boolean "is_active", null: false
     t.decimal "latitude", precision: 10, scale: 6
     t.decimal "longitude", precision: 10, scale: 6
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.index ["name"], name: "index_venues_on_name", unique: true
   end
 
   add_foreign_key "leagues", "sports"
