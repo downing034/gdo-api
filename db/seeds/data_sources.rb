@@ -1,4 +1,16 @@
 DataSource.create!([
+  # mlb, ncaaf, ncaam, nfl
+  {
+    code: "gdo",
+    name: "Gameday Oracle",
+    base_url: ""
+  },
+  # mlb, ncaaf, ncaam, nfl
+  {
+    code: "sportsline",
+    name: "Sportsline",
+    base_url: "https://www.sportsline.com/"
+  },
   # mlb  
   {
     code: "mlb_api",
