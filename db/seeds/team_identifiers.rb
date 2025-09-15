@@ -1,11 +1,11 @@
 
-leagues = League.where(code: %w[mlb nfl]).index_by(&:code)
+leagues = League.where(code: %w[mlb nfl ncaaf ncaam]).index_by(&:code)
 
 teams_by_league = leagues.transform_values do |league|
   Team.where(league: league).index_by(&:code)
 end
 
-sources = DataSource.where(code: %w[sportsline fan_graphs mlb_api]).index_by(&:code)
+sources = DataSource.where(code: %w[sportsline mlb_api roto_wire]).index_by(&:code)
 
 
 shared_sportsline_overrides = {
@@ -66,7 +66,7 @@ shared_sportsline_overrides = {
   "MORG" => "MORGAN",
   "MSST" => "MISSST",
   "MSU" => "MICHST",
-  "MTST" => "MTSU",
+  "MTST" => "MONST",
   "NA" => "NAL",
   "NCCU" => "NCCEN",
   "NEV" => "NEVADA",
@@ -175,10 +175,10 @@ overrides_by_league_and_source = {
     }
   },
   "ncaaf" => {
-    "sportsline" => sportsline_shared
+    "sportsline" => shared_sportsline_overrides
   },
   "ncaam" => {
-    "sportsline" => sportsline_shared
+    "sportsline" => shared_sportsline_overrides
   }
 
 }

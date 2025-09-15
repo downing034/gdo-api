@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_09_04_172444) do
+ActiveRecord::Schema[8.0].define(version: 2025_09_05_080936) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -44,6 +44,21 @@ ActiveRecord::Schema[8.0].define(version: 2025_09_04_172444) do
     t.index ["code"], name: "index_sports_on_code", unique: true
   end
 
+  create_table "team_identifiers", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "team_id", null: false
+    t.uuid "data_source_id", null: false
+    t.uuid "league_id", null: false
+    t.string "external_code", null: false
+    t.boolean "active", default: true, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["data_source_id", "league_id", "external_code"], name: "index_team_identifiers_on_source_league_and_code", unique: true
+    t.index ["data_source_id"], name: "index_team_identifiers_on_data_source_id"
+    t.index ["league_id"], name: "index_team_identifiers_on_league_id"
+    t.index ["team_id"], name: "index_team_identifiers_on_team_id"
+    t.check_constraint "TRIM(BOTH FROM external_code) <> ''::text", name: "check_external_code_not_blank"
+  end
+
   create_table "teams", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.string "code", null: false
     t.string "location_name", null: false
@@ -73,5 +88,8 @@ ActiveRecord::Schema[8.0].define(version: 2025_09_04_172444) do
   end
 
   add_foreign_key "leagues", "sports"
+  add_foreign_key "team_identifiers", "data_sources"
+  add_foreign_key "team_identifiers", "leagues"
+  add_foreign_key "team_identifiers", "teams"
   add_foreign_key "teams", "leagues"
 end
