@@ -2,6 +2,8 @@ class Game < ApplicationRecord
   belongs_to :league
   belongs_to :home_team, class_name: 'Team'
   belongs_to :away_team, class_name: 'Team'
+  
+  has_one :game_result, dependent: :destroy
 
   enum status: {
     scheduled: 0,
@@ -18,8 +20,17 @@ class Game < ApplicationRecord
 
   scope :for_date, ->(date) { where(game_date: date) }
   scope :for_league, ->(league) { where(league: league) }
+  scope :for_team, ->(team) { where('home_team_id = ? OR away_team_id = ?', team.id, team.id) }
   scope :completed, -> { where(status: :final) }
   scope :upcoming, -> { where(status: [:scheduled, :delayed]) }
+  scope :with_results, -> { joins(:game_result).where(game_results: { final: true }) }
+  scope :recent_first, -> { order(game_date: :desc, start_time: :desc) }
+  scope :chronological, -> { order(game_date: :asc, start_time: :asc) }
+  
+  # Team-specific scopes
+  scope :last_n_for_team, ->(team, n) { for_team(team).with_results.recent_first.limit(n) }
+  scope :next_for_team, ->(team) { for_team(team).upcoming.chronological.first }
+  scope :current_season, ->(year = Date.current.year) { where('EXTRACT(year from game_date) = ?', year) }
 
   def completed?
     final?

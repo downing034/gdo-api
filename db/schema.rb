@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_09_16_174506) do
+ActiveRecord::Schema[8.0].define(version: 2025_09_16_181623) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -21,6 +21,18 @@ ActiveRecord::Schema[8.0].define(version: 2025_09_16_174506) do
     t.string "base_url"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+  end
+
+  create_table "game_results", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "game_id", null: false
+    t.integer "home_score"
+    t.integer "away_score"
+    t.boolean "final", default: false
+    t.json "period_scores"
+    t.text "notes"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["game_id"], name: "index_game_results_on_game_id", unique: true
   end
 
   create_table "games", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -104,6 +116,7 @@ ActiveRecord::Schema[8.0].define(version: 2025_09_16_174506) do
     t.index ["name"], name: "index_venues_on_name", unique: true
   end
 
+  add_foreign_key "game_results", "games"
   add_foreign_key "games", "leagues"
   add_foreign_key "games", "teams", column: "away_team_id"
   add_foreign_key "games", "teams", column: "home_team_id"
