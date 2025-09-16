@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_09_05_080936) do
+ActiveRecord::Schema[8.0].define(version: 2025_09_16_174506) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -21,6 +21,23 @@ ActiveRecord::Schema[8.0].define(version: 2025_09_05_080936) do
     t.string "base_url"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+  end
+
+  create_table "games", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "league_id", null: false
+    t.date "game_date", null: false
+    t.uuid "home_team_id", null: false
+    t.uuid "away_team_id", null: false
+    t.datetime "start_time"
+    t.integer "status", default: 0
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["away_team_id"], name: "index_games_on_away_team_id"
+    t.index ["home_team_id"], name: "index_games_on_home_team_id"
+    t.index ["league_id", "game_date", "home_team_id", "away_team_id", "start_time"], name: "index_games_on_unique_game", unique: true
+    t.index ["league_id", "game_date"], name: "index_games_on_league_id_and_game_date"
+    t.index ["league_id"], name: "index_games_on_league_id"
+    t.check_constraint "home_team_id <> away_team_id", name: "games_different_teams"
   end
 
   create_table "leagues", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -87,6 +104,9 @@ ActiveRecord::Schema[8.0].define(version: 2025_09_05_080936) do
     t.index ["name"], name: "index_venues_on_name", unique: true
   end
 
+  add_foreign_key "games", "leagues"
+  add_foreign_key "games", "teams", column: "away_team_id"
+  add_foreign_key "games", "teams", column: "home_team_id"
   add_foreign_key "leagues", "sports"
   add_foreign_key "team_identifiers", "data_sources"
   add_foreign_key "team_identifiers", "leagues"
