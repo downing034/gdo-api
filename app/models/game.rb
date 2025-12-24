@@ -1,18 +1,12 @@
 class Game < ApplicationRecord
+  belongs_to :season
   belongs_to :league
   belongs_to :home_team, class_name: 'Team'
   belongs_to :away_team, class_name: 'Team'
   
   has_one :game_result, dependent: :destroy
 
-  enum status: {
-    scheduled: 0,
-    in_progress: 1,
-    final: 2,
-    postponed: 3,
-    delayed: 4,
-    cancelled: 5
-  }
+  enum :status, { scheduled: 0, in_progress: 1, final: 2, postponed: 3, delayed: 4, cancelled: 5 }
 
   validates :game_date, presence: true
   validate :teams_must_be_different

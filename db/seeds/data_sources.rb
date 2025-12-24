@@ -54,7 +54,7 @@ DataSource.create!([
   },
   # ncaam
   {
-    code: "ken_Pom",
+    code: "ken_pom",
     name: "Ken Pom",
     base_url: "https://kenpom.com"
   },

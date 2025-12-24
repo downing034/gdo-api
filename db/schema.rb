@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_09_16_181623) do
+ActiveRecord::Schema[8.0].define(version: 2025_11_12_181113) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -44,11 +44,13 @@ ActiveRecord::Schema[8.0].define(version: 2025_09_16_181623) do
     t.integer "status", default: 0
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.uuid "season_id", null: false
     t.index ["away_team_id"], name: "index_games_on_away_team_id"
     t.index ["home_team_id"], name: "index_games_on_home_team_id"
     t.index ["league_id", "game_date", "home_team_id", "away_team_id", "start_time"], name: "index_games_on_unique_game", unique: true
     t.index ["league_id", "game_date"], name: "index_games_on_league_id_and_game_date"
     t.index ["league_id"], name: "index_games_on_league_id"
+    t.index ["season_id"], name: "index_games_on_season_id"
     t.check_constraint "home_team_id <> away_team_id", name: "games_different_teams"
   end
 
@@ -63,6 +65,19 @@ ActiveRecord::Schema[8.0].define(version: 2025_09_16_181623) do
     t.datetime "updated_at", null: false
     t.index ["sport_id", "code"], name: "index_leagues_on_sport_id_and_code", unique: true
     t.index ["sport_id"], name: "index_leagues_on_sport_id"
+  end
+
+  create_table "seasons", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "league_id", null: false
+    t.string "name", null: false
+    t.date "start_date", null: false
+    t.date "end_date", null: false
+    t.boolean "active", default: false, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["active"], name: "index_seasons_on_active"
+    t.index ["league_id", "name"], name: "index_seasons_on_league_id_and_name", unique: true
+    t.index ["league_id"], name: "index_seasons_on_league_id"
   end
 
   create_table "sports", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -118,9 +133,11 @@ ActiveRecord::Schema[8.0].define(version: 2025_09_16_181623) do
 
   add_foreign_key "game_results", "games"
   add_foreign_key "games", "leagues"
+  add_foreign_key "games", "seasons"
   add_foreign_key "games", "teams", column: "away_team_id"
   add_foreign_key "games", "teams", column: "home_team_id"
   add_foreign_key "leagues", "sports"
+  add_foreign_key "seasons", "leagues"
   add_foreign_key "team_identifiers", "data_sources"
   add_foreign_key "team_identifiers", "leagues"
   add_foreign_key "team_identifiers", "teams"
