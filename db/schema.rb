@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_11_12_181113) do
+ActiveRecord::Schema[8.0].define(version: 2025_12_24_220045) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -21,6 +21,29 @@ ActiveRecord::Schema[8.0].define(version: 2025_11_12_181113) do
     t.string "base_url"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+  end
+
+  create_table "game_odds", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "game_id", null: false
+    t.uuid "spread_favorite_team_id"
+    t.decimal "spread_value"
+    t.integer "spread_favorite_odds"
+    t.integer "spread_underdog_odds"
+    t.decimal "total_line"
+    t.integer "over_odds"
+    t.integer "under_odds"
+    t.uuid "moneyline_favorite_team_id"
+    t.integer "moneyline_favorite_odds"
+    t.integer "moneyline_underdog_odds"
+    t.uuid "data_source_id", null: false
+    t.datetime "fetched_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["data_source_id"], name: "index_game_odds_on_data_source_id"
+    t.index ["game_id", "fetched_at"], name: "index_game_odds_on_game_id_and_fetched_at"
+    t.index ["game_id"], name: "index_game_odds_on_game_id"
+    t.index ["moneyline_favorite_team_id"], name: "index_game_odds_on_moneyline_favorite_team_id"
+    t.index ["spread_favorite_team_id"], name: "index_game_odds_on_spread_favorite_team_id"
   end
 
   create_table "game_results", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -131,6 +154,10 @@ ActiveRecord::Schema[8.0].define(version: 2025_11_12_181113) do
     t.index ["name"], name: "index_venues_on_name", unique: true
   end
 
+  add_foreign_key "game_odds", "data_sources"
+  add_foreign_key "game_odds", "games"
+  add_foreign_key "game_odds", "teams", column: "moneyline_favorite_team_id"
+  add_foreign_key "game_odds", "teams", column: "spread_favorite_team_id"
   add_foreign_key "game_results", "games"
   add_foreign_key "games", "leagues"
   add_foreign_key "games", "seasons"
