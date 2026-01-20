@@ -4,7 +4,7 @@ require 'csv'
 namespace :games do
   # Current week constants - update these as seasons progress
   MAX_NFL_WEEK = 20
-  MAX_NCAAF_WEEK = 15
+  MAX_NCAAF_WEEK = 16
 
   desc "Backfill MLB games from CSV file"
   task backfill_mlb: :environment do
@@ -50,11 +50,16 @@ namespace :games do
 
   private
 
+  def normalize_team_code(code)
+    return code if code == 'Linden'
+    code.upcase
+  end
+
   def process_mlb_game_row(row, league)
     # Parse date and teams
     game_date = Date.strptime(row['date'], '%Y%m%d')
-    home_team_code = row['home_team'].upcase
-    away_team_code = row['away_team'].upcase
+    home_team_code = normalize_team_code(row['home_team'])
+    away_team_code = normalize_team_code(row['away_team'])
     
     # Skip future games without moneyline data
     if game_date > Date.current && row['moneyline_favorite_team'].blank?
@@ -63,8 +68,8 @@ namespace :games do
     end
     
     # Find teams
-    home_team = Team.find_by!(code: home_team_code, league: league)
-    away_team = Team.find_by!(code: away_team_code, league: league)
+    home_team = league.teams.find_by!(code: home_team_code)
+    away_team = league.teams.find_by!(code: away_team_code)
     
     # Find the season for this game date
     season = Season.find_by!(
@@ -209,8 +214,8 @@ namespace :games do
     
     # Parse basic game info
     game_date = Date.strptime(row['date'], '%Y%m%d')
-    home_team_code = row['home_team'].upcase
-    away_team_code = row['away_team'].upcase
+    home_team_code = normalize_team_code(row['home_team'])
+    away_team_code = normalize_team_code(row['away_team'])
     
     # Skip future games without moneyline data
     if game_date > Date.current && row['moneyline_favorite_team'].blank?
@@ -220,8 +225,8 @@ namespace :games do
     end
     
     # Find teams
-    home_team = Team.find_by!(code: home_team_code, league: league)
-    away_team = Team.find_by!(code: away_team_code, league: league)
+    home_team = league.teams.find_by!(code: home_team_code)
+    away_team = league.teams.find_by!(code: away_team_code)
     
     # Find the season for this game date
     season = Season.find_by!(
@@ -283,7 +288,7 @@ namespace :games do
     end
     
     # Create game odds if we have any odds data
-    if create_game_odds(game, row, league)
+    if create_game_odds(game, row)
       odds_created += 1
     end
     
@@ -294,8 +299,8 @@ namespace :games do
   def process_date_game_row(row, league, max_date, games_created, games_updated, results_created, games_skipped, odds_created)
     # Parse basic game info
     game_date = Date.strptime(row['date'], '%Y%m%d')
-    home_team_code = row['home_team'].upcase
-    away_team_code = row['away_team'].upcase
+    home_team_code = normalize_team_code(row['home_team'])
+    away_team_code = normalize_team_code(row['away_team'])
     
     # Skip future games without moneyline odds (beyond max_date)
     if game_date > max_date && row['favorite_moneyline_odds'].blank?
@@ -305,8 +310,10 @@ namespace :games do
     end
     
     # Find teams
-    home_team = Team.find_by!(code: home_team_code, league: league)
-    away_team = Team.find_by!(code: away_team_code, league: league)
+    home_team = league.teams.find_by!(code: home_team_code)
+    away_team = league.teams.find_by!(code: away_team_code)
+
+    
     
     # Find the season for this game date
     season = Season.find_by!(
@@ -368,7 +375,7 @@ namespace :games do
     end
     
     # Create game odds if we have any odds data
-    if create_game_odds(game, row, league)
+    if create_game_odds(game, row)
       odds_created += 1
     end
     
@@ -376,31 +383,34 @@ namespace :games do
     [games_created, games_updated, results_created, games_skipped, odds_created]
   end
 
-  def create_game_odds(game, row, league)
+  def create_game_odds(game, row)
     # Check if we have any odds data at all
     has_odds = row['moneyline_favorite_team'].present? ||
-               row['runline_favorite_team'].present? ||
-               row['total_line'].present?
+              row['runline_favorite_team'].present? ||
+              row['total_line'].present?
     
     return false unless has_odds
+
+    espn_source = DataSource.find_by!(code: 'espn')
     
     # Build odds attributes
     odds_attrs = {
       game: game,
-      fetched_at: Time.current  # Using current timestamp for backfill; live polling will use actual fetch time
+      data_source: espn_source,
+      fetched_at: Time.current
     }
     
     # Moneyline
     if row['moneyline_favorite_team'].present?
-      moneyline_fav_team = Team.find_by!(code: row['moneyline_favorite_team'].upcase, league: league)
+      moneyline_fav_team = game.league.teams.find_by!(code: normalize_team_code(row['moneyline_favorite_team']))
       odds_attrs[:moneyline_favorite_team] = moneyline_fav_team
       odds_attrs[:moneyline_favorite_odds] = row['favorite_moneyline_odds']&.to_i
       odds_attrs[:moneyline_underdog_odds] = row['underdog_moneyline_odds']&.to_i
     end
-    
+
     # Spread/Runline
     if row['runline_favorite_team'].present? && row['runline_value'].present?
-      spread_fav_team = Team.find_by!(code: row['runline_favorite_team'].upcase, league: league)
+      spread_fav_team = game.league.teams.find_by!(code: normalize_team_code(row['runline_favorite_team']))
       odds_attrs[:spread_favorite_team] = spread_fav_team
       odds_attrs[:spread_value] = row['runline_value'].to_f
       odds_attrs[:spread_favorite_odds] = row['favorite_runline_odds']&.to_i
@@ -414,12 +424,8 @@ namespace :games do
       odds_attrs[:under_odds] = row['under_total_line_odds']&.to_i
     end
     
-    # Create the odds record (using create! to raise errors if validation fails)
     GameOdds.create!(odds_attrs)
     puts "  Odds created"
     true
-  rescue => e
-    puts "  Warning: Could not create odds - #{e.message}"
-    false
   end
 end

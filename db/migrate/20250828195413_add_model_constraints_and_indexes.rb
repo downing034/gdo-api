@@ -16,7 +16,7 @@ class AddModelConstraintsAndIndexes < ActiveRecord::Migration[8.0]
     change_column_null :teams, :location_name, false
     change_column_null :teams, :nickname, false
     change_column_null :teams, :active, false
-    add_index :teams, [:league_id, :code], unique: true
+    add_index :teams, :code, unique: true
 
     # Venues
     change_column_null :venues, :name, false

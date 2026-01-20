@@ -1,6 +1,7 @@
 mlb = League.find_by!(code: 'mlb')
 nfl = League.find_by!(code: 'nfl')
 ncaaf = League.find_by!(code: 'ncaaf')
+ncaam = League.find_by!(code: 'ncaam')
 
 mlb_teams = [
   { code: 'ATH', location_name: '',  nickname: 'Athletics' },
@@ -36,14 +37,17 @@ mlb_teams = [
 ]
 
 mlb_teams.each do |attrs|
-  Team.find_or_create_by!(code: attrs[:code], league: mlb) do |t|
+  team = Team.find_or_create_by!(code: attrs[:code]) do |t|
     t.location_name = attrs[:location_name]
     t.nickname = attrs[:nickname]
     t.active = true
   end
+  
+  # Associate team with MLB league
+  team.leagues << mlb unless team.leagues.include?(mlb)
 end
 
-nlf_teams = [
+nfl_teams = [
   { code: 'ARI', location_name: 'Arizona',  nickname: 'Cardinals' },
   { code: 'ATL', location_name: 'Atlanta',  nickname: 'Falcons' },
   { code: 'BAL', location_name: 'Baltimore',  nickname: 'Ravens' },
@@ -78,15 +82,17 @@ nlf_teams = [
   { code: 'WAS', location_name: 'Washington',  nickname: 'Commanders' }
 ]
 
-nlf_teams.each do |attrs|
-  Team.find_or_create_by!(code: attrs[:code], league: nfl) do |t|
+nfl_teams.each do |attrs|
+  team = Team.find_or_create_by!(code: attrs[:code]) do |t|
     t.location_name = attrs[:location_name]
     t.nickname = attrs[:nickname]
     t.active = true
   end
+  
+  team.leagues << nfl unless team.leagues.include?(nfl)
 end
 
-ncaaf_teams = [
+ncaa_teams = [
   { code: 'AAMU', location_name: 'Alabama A&M', nickname: 'Bulldogs' },
   { code: 'ACU', location_name: 'Abilene Christian', nickname: 'Wildcats' },
   { code: 'AFA', location_name: 'Air Force', nickname: 'Falcons' },
@@ -455,10 +461,14 @@ ncaaf_teams = [
   { code: 'YSU', location_name: 'Youngstown St.', nickname: 'Penguins' },
 ]
 
-ncaaf_teams.each do |attrs|
-  Team.find_or_create_by!(code: attrs[:code], league: ncaaf) do |t|
+ncaa_teams.each do |attrs|
+  team = Team.find_or_create_by!(code: attrs[:code]) do |t|
     t.location_name = attrs[:location_name]
     t.nickname = attrs[:nickname]
     t.active = true
   end
+  
+  # Associate with both football and basketball leagues
+  team.leagues << ncaaf unless team.leagues.include?(ncaaf)
+  team.leagues << ncaam unless team.leagues.include?(ncaam)
 end

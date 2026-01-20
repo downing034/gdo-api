@@ -1,9 +1,10 @@
 class Team < ApplicationRecord
-  belongs_to :league
+  has_many :leagues_teams
+  has_many :leagues, through: :leagues_teams
   belongs_to :venue, optional: true
   has_many :team_identifiers, dependent: :destroy
 
-  validates :code, presence: true, uniqueness: { scope: :league_id }
+  validates :code, presence: true, uniqueness: true
   validates :nickname, presence: true
   validates :active, inclusion: { in: [true, false] }
 

@@ -1,12 +1,5 @@
-
 leagues = League.where(code: %w[mlb nfl ncaaf ncaam]).index_by(&:code)
-
-teams_by_league = leagues.transform_values do |league|
-  Team.where(league: league).index_by(&:code)
-end
-
 sources = DataSource.where(code: %w[sportsline mlb_api roto_wire]).index_by(&:code)
-
 
 shared_sportsline_overrides = {
   "AAMU" => "ALAM",
@@ -295,21 +288,25 @@ overrides_by_league_and_source = {
 # Step 4: Seed team identifiers
 overrides_by_league_and_source.each do |league_code, source_overrides|
   league = leagues.fetch(league_code)
-  teams  = teams_by_league.fetch(league_code)
 
   source_overrides.each do |source_code, team_overrides|
     source = sources.fetch(source_code)
 
-    teams.each do |internal_code, team|
+    # Get teams for this league via the join table
+    league_teams = league.teams
+
+    league_teams.each do |team|
+      internal_code = team.code
       external_code = team_overrides[internal_code] || internal_code
 
       TeamIdentifier.find_or_create_by!(
         team: team,
         league: league,
-        data_source: source,
-        external_code: external_code,
-        active: true
-      )
+        data_source: source
+      ) do |ti|
+        ti.external_code = external_code
+        ti.active = true
+      end
     end
   end
 end

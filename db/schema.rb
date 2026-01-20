@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_12_24_220045) do
+ActiveRecord::Schema[8.0].define(version: 2026_01_19_193051) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -90,6 +90,13 @@ ActiveRecord::Schema[8.0].define(version: 2025_12_24_220045) do
     t.index ["sport_id"], name: "index_leagues_on_sport_id"
   end
 
+  create_table "leagues_teams", id: false, force: :cascade do |t|
+    t.uuid "league_id", null: false
+    t.uuid "team_id", null: false
+    t.index ["league_id", "team_id"], name: "index_leagues_teams_on_league_id_and_team_id", unique: true
+    t.index ["team_id", "league_id"], name: "index_leagues_teams_on_team_id_and_league_id"
+  end
+
   create_table "seasons", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.uuid "league_id", null: false
     t.string "name", null: false
@@ -131,11 +138,9 @@ ActiveRecord::Schema[8.0].define(version: 2025_12_24_220045) do
     t.string "location_name", null: false
     t.string "nickname", null: false
     t.boolean "active", null: false
-    t.uuid "league_id", null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.index ["league_id", "code"], name: "index_teams_on_league_id_and_code", unique: true
-    t.index ["league_id"], name: "index_teams_on_league_id"
+    t.index ["code"], name: "index_teams_on_code", unique: true
   end
 
   create_table "venues", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -168,5 +173,4 @@ ActiveRecord::Schema[8.0].define(version: 2025_12_24_220045) do
   add_foreign_key "team_identifiers", "data_sources"
   add_foreign_key "team_identifiers", "leagues"
   add_foreign_key "team_identifiers", "teams"
-  add_foreign_key "teams", "leagues"
 end
