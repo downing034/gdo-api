@@ -1,5 +1,5 @@
 leagues = League.where(code: %w[mlb nfl ncaaf ncaam]).index_by(&:code)
-sources = DataSource.where(code: %w[sportsline mlb_api roto_wire]).index_by(&:code)
+sources = DataSource.where(code: %w[sportsline mlb_api roto_wire espn]).index_by(&:code)
 
 shared_sportsline_overrides = {
   "AAMU" => "ALAM",
@@ -236,9 +236,128 @@ shared_sportsline_overrides = {
   "XAV" => "XAVIER"
 }
 
+shared_espn_overrides = {
+  "AFA" => "AF",
+  "ALBNY" => "UALB",
+  "ARPB" => "UAPB",
+  "BAMA" => "ALA",
+  "BELM" => "BEL",
+  "BSU" => "BOIS",
+  "BUFF" => "BUF",
+  "CABP" => "CBU",
+  "CAMP" => "CAM",
+  "CANI" => "CAN",
+  "CARIV" => "UCR",
+  "CASB" => "UCSB",
+  "CASTF" => "CSUF",
+  "CASTN" => "CSUN",
+  "CCAR" => "CCU",
+  "CCTST" => "CCSU",
+  "CHAR" => "CLT",
+  "CHAT" => "UTC",
+  "CHSU" => "CHST",
+  "CLEV" => "CLE",
+  "CLMB" => "COLU",
+  "COC" => "COFC",
+  "COOK" => "BCU",
+  "CREIG" => "CREI",
+  "DET" => "DETM",
+  "DPAUL" => "DEP",
+  "DREXL" => "DRXL",
+  "EKY" => "EKU",
+  "ETNST" => "ETSU",
+  "HP" => "HPU",
+  "IND" => "IU",
+  "IUI" => "IUIN",
+  "IW" => "UIW",
+  "JAC" => "JAX",
+  "JVST" => "JXST",
+  "KSW" => "KENN",
+  "LA" => "UL",
+  "LASAL" => "LAS",
+  "LBS" => "LBSU",
+  "Linden" => "LIN",
+  "LIPS" => "LIP",
+  "LMC" => "LEM",
+  "LOYIL" => "LUC",
+  "LOYMR" => "LMU",
+  "LUMD" => "L-MD",
+  "MACK" => "MRMK",
+  "MANH" => "MAN",
+  "MCNS" => "MCN",
+  "MHRT" => "MERC",
+  "MNE" => "ME",
+  "MIZZ" => "MIZ",
+  "MOKC" => "KC",
+  "MTSTM" => "MSM",
+  "MURR" => "MUR",
+  "NA" => "UNA",
+  "NCST" => "NCSU",
+  "NEAS" => "NE",
+  "NEOM" => "OMA",
+  "NIAG" => "NIA",
+  "NOVA" => "VILL",
+  "NW" => "NU",
+  "OAKD" => "OAK",
+  "OKLA" => "OU",
+  "ORAL" => "ORU",
+  "PEAY" => "APSU",
+  "PVAM" => "PV",
+  "QNNC" => "QUC",
+  "QPAC" => "QUIN",
+  "RADF" => "RAD",
+  "RDER" => "RID",
+  "SC" => "SCU",
+  "SCAR" => "SC",
+  "SDKS" => "SDST",
+  "SFU" => "SFPA",
+  "SH" => "HALL",
+  "SIEN" => "SIE",
+  "SJPA" => "JOES",
+  "SOIN" => "USI",
+  "STBON" => "SBU",
+  "STLOU" => "SLU",
+  "STMCA" => "SMC",
+  "STNH" => "STO",
+  "STON" => "STBK",
+  "STPE" => "SPU",
+  "STTL" => "SEA",
+  "TAMU" => "TA&M",
+  "TOWS" => "TOW",
+  "TRGV" => "RGV",
+  "TXACC" => "AMCC",
+  "TXARL" => "UTA",
+  "UALR" => "LR",
+  "UCA" => "CARK",
+  "UMASS" => "MASS",
+  "UMD" => "MD",
+  "UMLW" => "UML",
+  "UNFL" => "UNF",
+  "UNHV" => "NHVN",
+  "USCU" => "UPST",
+  "UVSU" => "UVU",
+  "UWGB" => "GB",
+  "UWM" => "MILW",
+  "VALP" => "VAL",
+  "VRMT" => "UVM",
+  "WEBB" => "GWEB",
+  "WEGA" => "WGA",
+  "WCHST" => "WICH",
+  "WINT" => "WIN",
+  "WMRY" => "W&M",
+  "WRIG" => "WRST",
+}
+
 
 overrides_by_league_and_source = {
   "mlb" => {
+    "espn" => {
+      "KCR" => "KC",
+      "SDP" => "SD",
+      "SFG" => "SF",
+      "TBR" => "TB",
+      "WSN" => "WSH",
+    },
     "sportsline" => {
       "KCR" => "KC",
       "SDP" => "SD",
@@ -266,6 +385,16 @@ overrides_by_league_and_source = {
     # fan_graphs has no overrides — all team codes match
   },
   "nfl" => {
+    "espn" => {
+      "GNB" => "GB",
+      "KAN" => "KC",
+      "LVR" => "LV",
+      "NOR" => "NO",
+      "NWE" => "NE",
+      "SFO" => "SF",
+      "TAM" => "TB",
+      "WSH" => "WAS"
+    },
     "sportsline" => {
       "GNB" => "GB",
       "JAX" => "JAC",
@@ -277,10 +406,12 @@ overrides_by_league_and_source = {
     }
   },
   "ncaaf" => {
-    "sportsline" => shared_sportsline_overrides
+    "sportsline" => shared_sportsline_overrides,
+    "espn" => shared_espn_overrides
   },
   "ncaam" => {
-    "sportsline" => shared_sportsline_overrides
+    "sportsline" => shared_sportsline_overrides,
+    "espn" => shared_espn_overrides
   }
 
 }

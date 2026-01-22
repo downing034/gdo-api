@@ -6,8 +6,16 @@ class Game < ApplicationRecord
   
   has_one :game_result, dependent: :destroy
   has_many :game_odds, dependent: :destroy
+  has_many :game_predictions, dependent: :destroy
 
-  enum :status, { scheduled: 0, in_progress: 1, final: 2, postponed: 3, delayed: 4, cancelled: 5 }
+  enum :status, {
+    scheduled: "scheduled",
+    in_progress: "in_progress",
+    final: "final",
+    postponed: "postponed",
+    delayed: "delayed",
+    cancelled: "cancelled"
+  }
 
   validates :game_date, presence: true
   validate :teams_must_be_different

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_01_19_193051) do
+ActiveRecord::Schema[8.0].define(version: 2026_01_21_023512) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -39,11 +39,30 @@ ActiveRecord::Schema[8.0].define(version: 2026_01_19_193051) do
     t.datetime "fetched_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.boolean "is_opening", default: false, null: false
     t.index ["data_source_id"], name: "index_game_odds_on_data_source_id"
     t.index ["game_id", "fetched_at"], name: "index_game_odds_on_game_id_and_fetched_at"
     t.index ["game_id"], name: "index_game_odds_on_game_id"
     t.index ["moneyline_favorite_team_id"], name: "index_game_odds_on_moneyline_favorite_team_id"
     t.index ["spread_favorite_team_id"], name: "index_game_odds_on_spread_favorite_team_id"
+  end
+
+  create_table "game_predictions", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "game_id", null: false
+    t.string "model_version", null: false
+    t.uuid "data_source_id", null: false
+    t.decimal "away_predicted_score"
+    t.decimal "home_predicted_score"
+    t.uuid "predicted_winner_id"
+    t.decimal "confidence"
+    t.datetime "generated_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["data_source_id"], name: "index_game_predictions_on_data_source_id"
+    t.index ["game_id", "model_version", "data_source_id", "generated_at"], name: "index_game_predictions_unique", unique: true
+    t.index ["game_id", "model_version"], name: "index_game_predictions_on_game_id_and_model_version"
+    t.index ["game_id"], name: "index_game_predictions_on_game_id"
+    t.index ["predicted_winner_id"], name: "index_game_predictions_on_predicted_winner_id"
   end
 
   create_table "game_results", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -64,7 +83,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_01_19_193051) do
     t.uuid "home_team_id", null: false
     t.uuid "away_team_id", null: false
     t.datetime "start_time"
-    t.integer "status", default: 0
+    t.string "status", default: "scheduled"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.uuid "season_id", null: false
@@ -163,6 +182,9 @@ ActiveRecord::Schema[8.0].define(version: 2026_01_19_193051) do
   add_foreign_key "game_odds", "games"
   add_foreign_key "game_odds", "teams", column: "moneyline_favorite_team_id"
   add_foreign_key "game_odds", "teams", column: "spread_favorite_team_id"
+  add_foreign_key "game_predictions", "data_sources"
+  add_foreign_key "game_predictions", "games"
+  add_foreign_key "game_predictions", "teams", column: "predicted_winner_id"
   add_foreign_key "game_results", "games"
   add_foreign_key "games", "leagues"
   add_foreign_key "games", "seasons"
