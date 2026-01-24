@@ -1,15 +1,42 @@
-# examples:
-#   periodic_cleanup:
-#     class: CleanSoftDeletedRecordsJob
-#     queue: background
-#     args: [ 1000, { batch_size: 500 } ]
-#     schedule: every hour
-#   periodic_cleanup_with_command:
-#     command: "SoftDeletedRecord.due.delete_all"
-#     priority: 2
-#     schedule: at 5am every day
+default: &default
+  espn_hourly:
+    class: EspnFetchGamesJob
+    args: ['hourly']
+    schedule: every hour
+
+  espn_every_4h:
+    class: EspnFetchGamesJob
+    args: ['every_4h']
+    schedule: every 4 hours
+
+  espn_twice_daily:
+    class: EspnFetchGamesJob
+    args: ['twice_daily']
+    schedule: every 12 hours
+
+  espn_daily:
+    class: EspnFetchGamesJob
+    args: ['daily']
+    schedule: every day at 6am
+
+  espn_yesterday_cleanup:
+    class: EspnFetchGamesJob
+    args: ['yesterday_cleanup']
+    schedule: every day at 4am
+
+  # ncaam_predictions_morning:
+  #   class: NcaamPredictionJob
+  #   schedule: every day at 9:30
+
+  # ncaam_predictions_afternoon:
+  #   class: NcaamPredictionJob
+  #   schedule: every day at 15:30
+
+development:
+  <<: *default
 
 production:
+  <<: *default
   clear_solid_queue_finished_jobs:
     command: "SolidQueue::Job.clear_finished_in_batches(sleep_between_batches: 0.3)"
     schedule: every hour at minute 12
