@@ -9,7 +9,7 @@ module Ncaam
     end
 
     def analyze_game(game)
-      gdo_pred = game.game_predictions.find { |p| p.model_version == 'gdo_v1_pre' }
+      gdo_pred = game.game_predictions.find { |p| p.model_version == 'v1' }
       sl_pred = game.game_predictions.find { |p| p.model_version == 'sl' }
       odds = game.game_odds.where(is_opening: false).order(fetched_at: :desc).first
 

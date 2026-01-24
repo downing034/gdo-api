@@ -20,6 +20,7 @@ rails ncaam:sweet_spot[2026-01-23,2026-01-22,2026-01-01,2026-01-22]  # [today, y
 rails games:export_ncaam                                   # Today
 rails games:export_ncaam[2026-01-23]                       # Specific date
 rails games:export_ncaam[2026-01-23,true]                  # With header
+rails games:export_ncaam[2026-01-23] | pbcopy              # directly to clipboard
 
 # Backfill from CSV
 rails games:backfill_ncaam                                 # Yesterday to today

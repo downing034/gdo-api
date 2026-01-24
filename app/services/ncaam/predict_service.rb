@@ -1,5 +1,5 @@
 module Ncaam
-  class PredictionService
+  class PredictService
     VENV_PYTHON = Rails.root.join('db', 'data', 'ncaam', 'venv', 'bin', 'python').to_s
     MODELS_DIR = Rails.root.join('db', 'data', 'ncaam', 'models', 'v1').to_s
     

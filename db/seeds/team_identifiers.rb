@@ -263,7 +263,7 @@ shared_espn_overrides = {
   "CREIG" => "CREI",
   "DET" => "DETM",
   "DPAUL" => "DEP",
-  "DREXL" => "DRXL",
+  "DREXL" => "DREX",
   "EKY" => "EKU",
   "ETNST" => "ETSU",
   "HP" => "HPU",
@@ -528,12 +528,14 @@ barttorvik_overrides = {
   "MTSTM" => "Mount St. Mary's",
   "MTSU" => "Middle Tennessee",
   "MURR" => "Murray St.",
-  "MVSU" => "Mississippi Valley St.",
+  "MVSU" => "Mississippi Valley S",
+  # "MVSU" => "Mississippi Valley St.",
   "NA" => "North Alabama",
   "NAU" => "Northern Arizona",
   "NAVY" => "Navy",
   "NCAT" => "North Carolina A&T",
-  "NCCU" => "North Carolina Central",
+  "NCCU" => "North Carolina Centr",
+  # "NCCU" => "North Carolina Central",
   "NCST" => "N.C. State",
   "ND" => "Notre Dame",
   "NDSU" => "North Dakota St.",
@@ -590,8 +592,10 @@ barttorvik_overrides = {
   "SDAK" => "South Dakota",
   "SDKS" => "South Dakota St.",
   "SDSU" => "San Diego St.",
-  "SELA" => "Southeastern Louisiana",
-  "SEMO" => "Southeast Missouri St.",
+  # "SELA" => "Southeastern Louisiana",
+  "SELA" => "Southeastern Louisia",
+  "SEMO" => "Southeast Missouri S",
+  # "SEMO" => "Southeast Missouri St.",
   "SF" => "San Francisco",
   "SFA" => "Stephen F. Austin",
   "SFU" => "Saint Francis",
@@ -634,7 +638,8 @@ barttorvik_overrides = {
   "TROY" => "Troy",
   "TTU" => "Texas Tech",
   "TULN" => "Tulane",
-  "TXACC" => "Texas A&M Corpus Chris",
+  "TXACC" => "Texas A&M Corpus Chr",
+  # "TXACC" => "Texas A&M Corpus Chris",
   "TXARL" => "UT Arlington",
   "TXSO" => "Texas Southern",
   "TXST" => "Texas St.",
@@ -653,7 +658,8 @@ barttorvik_overrides = {
   "UMASS" => "Massachusetts",
   "UMBC" => "UMBC",
   "UMD" => "Maryland",
-  "UMES" => "Maryland Eastern Shore",
+  "UMES" => "Maryland Eastern Sho",
+  # "UMES" => "Maryland Eastern Shore",
   "UMLW" => "UMass Lowell",
   "UNC" => "North Carolina",
   "UNCA" => "UNC Asheville",
@@ -1166,14 +1172,14 @@ overrides_by_league_and_source.each do |league_code, source_overrides|
       internal_code = team.code
       external_code = team_overrides[internal_code] || internal_code
 
-      TeamIdentifier.find_or_create_by!(
+      ti = TeamIdentifier.find_or_initialize_by(
         team: team,
         league: league,
         data_source: source
-      ) do |ti|
-        ti.external_code = external_code
-        ti.active = true
-      end
+      )
+      ti.external_code = external_code
+      ti.active = true
+      ti.save!
     end
   end
 end

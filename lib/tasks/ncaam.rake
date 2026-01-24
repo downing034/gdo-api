@@ -31,7 +31,7 @@ namespace :ncaam do
 
   desc "Generate predictions for upcoming games"
   task predict: :environment do
-    results = Ncaam::PredictionService.new.call
+    results = Ncaam::PredictService.new.call
     
     puts "Created: #{results[:created]}"
     puts "Updated: #{results[:updated]}"
@@ -50,21 +50,6 @@ namespace :ncaam do
     
     puts "Processed: #{results[:processed]}"
     puts "Trained: #{results[:trained]}"
-  end
-
-  desc "Generate predictions for upcoming games"
-  task predict: :environment do
-    results = Ncaam::PredictionService.new.call
-    
-    puts "Created: #{results[:created]}"
-    puts "Updated: #{results[:updated]}"
-    puts "Skipped: #{results[:skipped]}"
-    puts "Errors: #{results[:errors].count}"
-    
-    if results[:errors].any?
-      puts "\nErrors:"
-      results[:errors].each { |e| puts "  #{e}" }
-    end
   end
 
   desc "Analyze NCAAM sweet spot picks. Options: [today_date, yesterday_date, stats_start, stats_end]"
