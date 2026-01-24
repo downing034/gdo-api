@@ -1,4 +1,49 @@
 namespace :ncaam do
+  desc "Process raw CSVs into model-ready data"
+  task process: :environment do
+    puts "=" * 60
+    puts "Processing raw data..."
+    puts "=" * 60
+    
+    # Check for SEASONS env var, default to current season only
+    seasons = if ENV['SEASONS']
+      ENV['SEASONS'].split(',').map(&:strip)
+    else
+      ['25_26']
+    end
+    
+    puts "Seasons: #{seasons.join(', ')}"
+    
+    Ncaam::DataProcessorService.new(seasons: seasons).call
+  end
+
+  desc "Train the prediction model"
+  task train: :environment do
+    puts "=" * 60
+    puts "Training model..."
+    puts "=" * 60
+    
+    venv_python = Rails.root.join('db', 'data', 'ncaam', 'venv', 'bin', 'python')
+    train_script = Rails.root.join('db', 'data', 'ncaam', 'models', 'v1', 'train_model.py')
+    
+    system("#{venv_python} #{train_script}") || raise("Training failed")
+  end
+
+  desc "Generate predictions for upcoming games"
+  task predict: :environment do
+    results = Ncaam::PredictionService.new.call
+    
+    puts "Created: #{results[:created]}"
+    puts "Updated: #{results[:updated]}"
+    puts "Skipped: #{results[:skipped]}"
+    puts "Errors: #{results[:errors].count}"
+    
+    if results[:errors].any?
+      puts "\nErrors:"
+      results[:errors].each { |e| puts "  #{e}" }
+    end
+  end
+  
   desc "Process data and train model (run after dropping new CSVs)"
   task refresh: :environment do
     results = Ncaam::RefreshService.new.call

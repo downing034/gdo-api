@@ -5,8 +5,12 @@ rails espn:fetch_games[nba,2026-01-23]                     # NBA specific date
 rails espn:fetch_games_range[ncaam,2026-01-20,2026-01-25]  # Date range
 
 # NCAAM Data & Model
-rails ncaam:refresh                                        # Process CSVs + train model
-rails ncaam:predict                                        # Generate predictions for upcoming games
+rake ncaam:process                                         # Process CSVs (current season only)
+rake ncaam:process SEASONS=24_25,25_26                     # Process multiple seasons for training
+rake ncaam:process SEASONS=23_24,24_25,25_26               # Process three seasons when ready
+rake ncaam:train                                           # Train model
+rake ncaam:refresh                                         # Process CSVs + train model
+rake ncaam:predict                                         # Generate predictions for upcoming games
 
 # Sweet Spot Analysis
 rails ncaam:sweet_spot                                     # Defaults (today/yesterday)

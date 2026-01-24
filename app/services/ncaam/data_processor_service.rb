@@ -5,11 +5,13 @@
 # 2. Game-level data with rolling averages (base_model_game_data_with_rolling.csv)
 #
 # Usage:
+#   # Single season (default - current season only)
+#   service = Ncaam::DataProcessorService.new
+#   service.call
+#
+#   # Multiple seasons for training data
 #   service = Ncaam::DataProcessorService.new(
-#     games_path: 'path/to/ncaam_25_26_games_raw.csv',
-#     team_stats_path: 'path/to/ncaam_barthag_team_stats_raw.csv',
-#     team_table_path: 'path/to/ncaam_barthag_teams_table_raw.csv',
-#     output_dir: 'path/to/output'
+#     seasons: ['24_25', '25_26']  # Add '23_24' when ready
 #   )
 #   service.call
 #
@@ -20,22 +22,24 @@ module Ncaam
   class DataProcessorService
     HOME_ADVANTAGE = 3
 
-    attr_reader :games_path, :team_stats_path, :team_table_path, :output_dir,
+    attr_reader :seasons, :team_stats_path, :team_table_path, :output_dir,
                 :games_output_name, :team_output_name
 
-    def initialize(season: '25_26', output_dir: nil)
+    def initialize(seasons: ['25_26'], output_dir: nil)
       data_dir = Rails.root.join('db', 'data', 'ncaam')
       
-      @games_path = data_dir.join('raw', "ncaam_#{season}_games_raw.csv")
+      # Support single season string or array of seasons
+      @seasons = Array(seasons)
+      
       @team_stats_path = data_dir.join('raw', 'ncaam_barthag_team_stats_raw.csv')
       @team_table_path = data_dir.join('raw', 'ncaam_barthag_teams_table_raw.csv')
       @output_dir = output_dir || data_dir.join('processed')
       @games_output_name = 'base_model_game_data_with_rolling.csv'
       @team_output_name = 'ncaam_team_data_final.csv'
+      @data_dir = data_dir
       
       @team_stats = nil
       @team_table = nil
-      @games = nil
     end
 
     def call
@@ -49,18 +53,16 @@ module Ncaam
       @team_table = load_team_table
       puts "  Loaded #{@team_table.length} teams from team table"
 
-      @games = load_games
-      puts "  Loaded #{@games.length} game rows"
-
       puts
       puts '=' * 60
       puts 'Processing game data...'
       puts '=' * 60
 
-      merged_games = merge_games(@games)
-      puts "  Merged into #{merged_games.length} games"
+      # Process all seasons
+      all_games = process_all_seasons
+      puts "  Total games across all seasons: #{all_games.length}"
 
-      games_with_rolling = calculate_rolling_averages(merged_games)
+      games_with_rolling = calculate_rolling_averages(all_games)
       games_with_sos = add_sos_to_games(games_with_rolling)
       
       # Add home advantage constant
@@ -91,6 +93,54 @@ module Ncaam
     end
 
     private
+
+    # =========================================================================
+    # Multi-Season Processing
+    # =========================================================================
+
+    def process_all_seasons
+      all_games = []
+      game_id_offset = 0
+
+      # Process seasons in chronological order (oldest first)
+      sorted_seasons = @seasons.sort
+
+      sorted_seasons.each do |season|
+        games_path = @data_dir.join('raw', "ncaam_#{season}_games_raw.csv")
+        
+        unless File.exist?(games_path)
+          puts "  Skipping season #{season} - file not found: #{games_path}"
+          next
+        end
+
+        puts "  Processing season #{season}..."
+        
+        # Load raw game rows for this season
+        raw_games = load_games(games_path)
+        puts "    Loaded #{raw_games.length} game rows"
+
+        # Merge into single row per game
+        merged_games = merge_games(raw_games)
+        puts "    Merged into #{merged_games.length} games"
+
+        # Add season identifier and offset game IDs
+        merged_games.each_with_index do |game, idx|
+          game[:season] = season
+          game[:id] = game_id_offset + idx + 1
+        end
+
+        game_id_offset += merged_games.length
+        all_games.concat(merged_games)
+      end
+
+      # Final sort by date across all seasons
+      all_games.sort_by! { |g| g[:date] || '0000-00-00' }
+      
+      # Re-assign IDs after final sort
+      all_games.each_with_index { |g, idx| g[:id] = idx + 1 }
+
+      all_games
+    end
 
     # =========================================================================
     # Team Code Mapping
@@ -157,7 +207,7 @@ module Ncaam
       date_str = date_str.to_s.strip
       
       # Try different formats
-      ['%m/%d/%y', '%m/%d/%Y'].each do |fmt|
+      ['%m/%d/%y', '%m/%d/%Y', '%Y-%m-%d'].each do |fmt|
         begin
           return Date.strptime(date_str, fmt).strftime('%Y-%m-%d')
         rescue ArgumentError
@@ -310,8 +360,8 @@ module Ncaam
       end
     end
 
-    def load_games
-      puts "Loading games from: #{games_path}"
+    def load_games(games_path)
+      puts "  Loading games from: #{games_path}"
       
       rows = CSV.read(games_path)
       
@@ -355,8 +405,6 @@ module Ncaam
     # =========================================================================
 
     def merge_games(games_data)
-      puts 'Merging game rows...'
-      
       # Sort by date
       sorted_games = games_data.sort_by { |g| g['Date'] || '0000-00-00' }
       
@@ -447,9 +495,8 @@ module Ncaam
         merged_games << merged_game
       end
       
-      # Sort by date and add IDs
+      # Sort by date (IDs assigned later in process_all_seasons)
       merged_games.sort_by! { |g| g[:date] || '0000-00-00' }
-      merged_games.each_with_index { |g, idx| g[:id] = idx + 1 }
       
       merged_games
     end
@@ -457,90 +504,156 @@ module Ncaam
     def calculate_rolling_averages(games_data)
       puts 'Calculating rolling averages...'
       
-      # Build team game history
+      # Build team game history with all stats we need to roll
       team_games = []
       
       games_data.each do |game|
         # Away team's game
         team_games << {
           date: game[:date],
+          season: game[:season],
           team: game[:away_team],
           game_id: game[:id],
+          # Efficiency metrics
           AdjO: game[:away_AdjO],
           AdjD: game[:away_AdjD],
-          T: game[:away_T]
+          T: game[:away_T],
+          # Offensive Four Factors (from game)
+          eFG_off: game[:"away_OeFG%"],
+          TOV_off: game[:"away_OTO%"],
+          OReb: game[:"away_OReb%"],
+          FTR_off: game[:away_OFTR],
+          # Defensive Four Factors (from game)
+          eFG_def: game[:"away_DeFG%"],
+          TOV_def: game[:"away_DTO%"],
+          DReb: game[:"away_DReb%"],
+          FTR_def: game[:away_DFTR],
+          # Game score
+          g_score: game[:away_g_score]
         }
         
         # Home team's game
         team_games << {
           date: game[:date],
+          season: game[:season],
           team: game[:home_team],
           game_id: game[:id],
+          # Efficiency metrics
           AdjO: game[:home_AdjO],
           AdjD: game[:home_AdjD],
-          T: game[:home_T]
+          T: game[:home_T],
+          # Offensive Four Factors (from game)
+          eFG_off: game[:"home_OeFG%"],
+          TOV_off: game[:"home_OTO%"],
+          OReb: game[:"home_OReb%"],
+          FTR_off: game[:home_OFTR],
+          # Defensive Four Factors (from game)
+          eFG_def: game[:"home_DeFG%"],
+          TOV_def: game[:"home_DTO%"],
+          DReb: game[:"home_DReb%"],
+          FTR_def: game[:home_DFTR],
+          # Game score
+          g_score: game[:home_g_score]
         }
       end
       
-      # Sort by team and date
-      team_games.sort_by! { |g| [g[:team].to_s, g[:date].to_s] }
+      # Sort by team, then season, then date
+      # This ensures rolling stats are calculated correctly within each season
+      team_games.sort_by! { |g| [g[:team].to_s, g[:season].to_s, g[:date].to_s] }
       
-      # Group by team
-      team_games_by_team = team_games.group_by { |g| g[:team] }
+      # Group by team AND season (rolling resets each season)
+      team_season_games = team_games.group_by { |g| [g[:team], g[:season]] }
+      
+      # All stats we want to roll
+      stats_to_roll = [
+        :AdjO, :AdjD, :T,
+        :eFG_off, :TOV_off, :OReb, :FTR_off,
+        :eFG_def, :TOV_def, :DReb, :FTR_def,
+        :g_score
+      ]
       
       # Calculate rolling stats
       rolling_stats = {}
       
-      team_games_by_team.each do |team, team_data|
+      team_season_games.each do |(team, season), team_data|
         team_data.sort_by! { |g| g[:date].to_s }
         
         team_data.each_with_index do |game, idx|
           game_id = game[:game_id]
           rolling_stats[game_id] ||= {}
           
-          # Get previous games
+          # Get previous games within this season only (not including current)
           prev_games = team_data[0...idx]
           
+          # Calculate days since last game
           if prev_games.empty?
-            # First game - use current stats
-            rolling_5 = { AdjO: game[:AdjO], AdjD: game[:AdjD], T: game[:T] }
-            rolling_10 = { AdjO: game[:AdjO], AdjD: game[:AdjD], T: game[:T] }
+            days_rest = 7  # Default for first game of season
           else
-            # Rolling 5
-            last_5 = prev_games.last([5, prev_games.length].min)
-            rolling_5 = {
-              AdjO: last_5.map { |g| g[:AdjO] }.compact.sum.to_f / [last_5.map { |g| g[:AdjO] }.compact.length, 1].max,
-              AdjD: last_5.map { |g| g[:AdjD] }.compact.sum.to_f / [last_5.map { |g| g[:AdjD] }.compact.length, 1].max,
-              T: last_5.map { |g| g[:T] }.compact.sum.to_f / [last_5.map { |g| g[:T] }.compact.length, 1].max
-            }
-            
-            # Rolling 10
-            last_10 = prev_games.last([10, prev_games.length].min)
-            rolling_10 = {
-              AdjO: last_10.map { |g| g[:AdjO] }.compact.sum.to_f / [last_10.map { |g| g[:AdjO] }.compact.length, 1].max,
-              AdjD: last_10.map { |g| g[:AdjD] }.compact.sum.to_f / [last_10.map { |g| g[:AdjD] }.compact.length, 1].max,
-              T: last_10.map { |g| g[:T] }.compact.sum.to_f / [last_10.map { |g| g[:T] }.compact.length, 1].max
-            }
+            last_game_date = Date.parse(prev_games.last[:date].to_s)
+            current_game_date = Date.parse(game[:date].to_s)
+            days_rest = (current_game_date - last_game_date).to_i
           end
           
-          # Find original game to determine if this team is away or home
+          # Calculate rolling averages for each stat
+          rolling_5 = {}
+          rolling_10 = {}
+          
+          stats_to_roll.each do |stat|
+            if prev_games.empty?
+              # First game of season - use current game stats as fallback
+              rolling_5[stat] = game[stat]
+              rolling_10[stat] = game[stat]
+            else
+              # Rolling 5
+              last_5 = prev_games.last([5, prev_games.length].min)
+              values_5 = last_5.map { |g| g[stat] }.compact
+              rolling_5[stat] = values_5.empty? ? nil : (values_5.sum.to_f / values_5.length)
+              
+              # Rolling 10
+              last_10 = prev_games.last([10, prev_games.length].min)
+              values_10 = last_10.map { |g| g[stat] }.compact
+              rolling_10[stat] = values_10.empty? ? nil : (values_10.sum.to_f / values_10.length)
+            end
+          end
+          
+          # Determine if this team is away or home and assign stats
           original_game = games_data.find { |g| g[:id] == game_id }
+          prefix = original_game[:away_team] == team ? 'away' : 'home'
           
-          if original_game[:away_team] == team
-            rolling_stats[game_id][:away_AdjO_rolling_5] = rolling_5[:AdjO]&.round(2)
-            rolling_stats[game_id][:away_AdjO_rolling_10] = rolling_10[:AdjO]&.round(2)
-            rolling_stats[game_id][:away_AdjD_rolling_5] = rolling_5[:AdjD]&.round(2)
-            rolling_stats[game_id][:away_AdjD_rolling_10] = rolling_10[:AdjD]&.round(2)
-            rolling_stats[game_id][:away_T_rolling_5] = rolling_5[:T]&.round(2)
-            rolling_stats[game_id][:away_T_rolling_10] = rolling_10[:T]&.round(2)
-          else
-            rolling_stats[game_id][:home_AdjO_rolling_5] = rolling_5[:AdjO]&.round(2)
-            rolling_stats[game_id][:home_AdjO_rolling_10] = rolling_10[:AdjO]&.round(2)
-            rolling_stats[game_id][:home_AdjD_rolling_5] = rolling_5[:AdjD]&.round(2)
-            rolling_stats[game_id][:home_AdjD_rolling_10] = rolling_10[:AdjD]&.round(2)
-            rolling_stats[game_id][:home_T_rolling_5] = rolling_5[:T]&.round(2)
-            rolling_stats[game_id][:home_T_rolling_10] = rolling_10[:T]&.round(2)
-          end
+          # Efficiency metrics
+          rolling_stats[game_id][:"#{prefix}_AdjO_rolling_5"] = rolling_5[:AdjO]&.round(2)
+          rolling_stats[game_id][:"#{prefix}_AdjO_rolling_10"] = rolling_10[:AdjO]&.round(2)
+          rolling_stats[game_id][:"#{prefix}_AdjD_rolling_5"] = rolling_5[:AdjD]&.round(2)
+          rolling_stats[game_id][:"#{prefix}_AdjD_rolling_10"] = rolling_10[:AdjD]&.round(2)
+          rolling_stats[game_id][:"#{prefix}_T_rolling_5"] = rolling_5[:T]&.round(2)
+          rolling_stats[game_id][:"#{prefix}_T_rolling_10"] = rolling_10[:T]&.round(2)
+          
+          # Offensive Four Factors rolling
+          rolling_stats[game_id][:"#{prefix}_eFG_off_rolling_5"] = rolling_5[:eFG_off]&.round(2)
+          rolling_stats[game_id][:"#{prefix}_eFG_off_rolling_10"] = rolling_10[:eFG_off]&.round(2)
+          rolling_stats[game_id][:"#{prefix}_TOV_off_rolling_5"] = rolling_5[:TOV_off]&.round(2)
+          rolling_stats[game_id][:"#{prefix}_TOV_off_rolling_10"] = rolling_10[:TOV_off]&.round(2)
+          rolling_stats[game_id][:"#{prefix}_OReb_rolling_5"] = rolling_5[:OReb]&.round(2)
+          rolling_stats[game_id][:"#{prefix}_OReb_rolling_10"] = rolling_10[:OReb]&.round(2)
+          rolling_stats[game_id][:"#{prefix}_FTR_off_rolling_5"] = rolling_5[:FTR_off]&.round(2)
+          rolling_stats[game_id][:"#{prefix}_FTR_off_rolling_10"] = rolling_10[:FTR_off]&.round(2)
+          
+          # Defensive Four Factors rolling
+          rolling_stats[game_id][:"#{prefix}_eFG_def_rolling_5"] = rolling_5[:eFG_def]&.round(2)
+          rolling_stats[game_id][:"#{prefix}_eFG_def_rolling_10"] = rolling_10[:eFG_def]&.round(2)
+          rolling_stats[game_id][:"#{prefix}_TOV_def_rolling_5"] = rolling_5[:TOV_def]&.round(2)
+          rolling_stats[game_id][:"#{prefix}_TOV_def_rolling_10"] = rolling_10[:TOV_def]&.round(2)
+          rolling_stats[game_id][:"#{prefix}_DReb_rolling_5"] = rolling_5[:DReb]&.round(2)
+          rolling_stats[game_id][:"#{prefix}_DReb_rolling_10"] = rolling_10[:DReb]&.round(2)
+          rolling_stats[game_id][:"#{prefix}_FTR_def_rolling_5"] = rolling_5[:FTR_def]&.round(2)
+          rolling_stats[game_id][:"#{prefix}_FTR_def_rolling_10"] = rolling_10[:FTR_def]&.round(2)
+          
+          # Game score rolling
+          rolling_stats[game_id][:"#{prefix}_g_score_rolling_5"] = rolling_5[:g_score]&.round(2)
+          rolling_stats[game_id][:"#{prefix}_g_score_rolling_10"] = rolling_10[:g_score]&.round(2)
+          
+          # Days rest
+          rolling_stats[game_id][:"#{prefix}_days_rest"] = days_rest
         end
       end
       
@@ -629,7 +742,7 @@ module Ncaam
       output_path = File.join(output_dir, games_output_name)
       
       column_order = %i[
-        id date away_team away_conf home_team home_conf venue
+        id season date away_team away_conf home_team home_conf venue
         away_score home_score
         away_AdjO home_AdjO away_AdjD home_AdjD away_T home_T
         away_OEFF home_OEFF away_OeFG% home_OeFG% away_OTO% home_OTO%
@@ -640,6 +753,16 @@ module Ncaam
         away_AdjO_rolling_5 away_AdjO_rolling_10 home_AdjO_rolling_5 home_AdjO_rolling_10
         away_AdjD_rolling_5 away_AdjD_rolling_10 home_AdjD_rolling_5 home_AdjD_rolling_10
         away_T_rolling_5 away_T_rolling_10 home_T_rolling_5 home_T_rolling_10
+        away_eFG_off_rolling_5 away_eFG_off_rolling_10 home_eFG_off_rolling_5 home_eFG_off_rolling_10
+        away_TOV_off_rolling_5 away_TOV_off_rolling_10 home_TOV_off_rolling_5 home_TOV_off_rolling_10
+        away_OReb_rolling_5 away_OReb_rolling_10 home_OReb_rolling_5 home_OReb_rolling_10
+        away_FTR_off_rolling_5 away_FTR_off_rolling_10 home_FTR_off_rolling_5 home_FTR_off_rolling_10
+        away_eFG_def_rolling_5 away_eFG_def_rolling_10 home_eFG_def_rolling_5 home_eFG_def_rolling_10
+        away_TOV_def_rolling_5 away_TOV_def_rolling_10 home_TOV_def_rolling_5 home_TOV_def_rolling_10
+        away_DReb_rolling_5 away_DReb_rolling_10 home_DReb_rolling_5 home_DReb_rolling_10
+        away_FTR_def_rolling_5 away_FTR_def_rolling_10 home_FTR_def_rolling_5 home_FTR_def_rolling_10
+        away_g_score_rolling_5 away_g_score_rolling_10 home_g_score_rolling_5 home_g_score_rolling_10
+        away_days_rest home_days_rest
         away_sos home_sos home_advantage
       ]
       
@@ -656,6 +779,7 @@ module Ncaam
       end
       
       puts "  Saved games data to: #{output_path}"
+      puts "  Total games: #{games_data.length}"
     end
 
     def save_team_summary_csv(team_data)
