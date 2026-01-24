@@ -24,6 +24,11 @@ default: &default
     args: ['yesterday_cleanup']
     schedule: every day at 4am
 
+  export_stale_ncaam:
+    class: ExportStaleGamesJob
+    args: ['ncaam']
+    schedule: every day at 6am
+
   # ncaam_predictions_morning:
   #   class: NcaamPredictionJob
   #   schedule: every day at 9:30

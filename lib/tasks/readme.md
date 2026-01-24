@@ -22,6 +22,10 @@ rails games:export_ncaam[2026-01-23]                       # Specific date
 rails games:export_ncaam[2026-01-23,true]                  # With header
 rails games:export_ncaam[2026-01-23] | pbcopy              # directly to clipboard
 
+# Export Stale Games
+rails games:export_stale[ncaam]                            # Export stale NCAAM games to CSV
+rails games:export_stale[nfl]                              # Export stale NFL games to CSV
+
 # Backfill from CSV
 rails games:backfill_ncaam                                 # Yesterday to today
 rails games:backfill_ncaam[2026-01-20,2026-01-22]          # Date range

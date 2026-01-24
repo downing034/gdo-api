@@ -20,6 +20,7 @@ class Game < ApplicationRecord
   validates :game_date, presence: true
   validate :teams_must_be_different
   validate :teams_must_be_in_same_league
+  validates :external_id, uniqueness: { scope: :league_id }, allow_nil: true
 
   scope :for_date, ->(date) { where(game_date: date) }
   scope :for_league, ->(league) { where(league: league) }
@@ -29,6 +30,9 @@ class Game < ApplicationRecord
   scope :with_results, -> { joins(:game_result).where(game_results: { final: true }) }
   scope :recent_first, -> { order(game_date: :desc, start_time: :desc) }
   scope :chronological, -> { order(game_date: :asc, start_time: :asc) }
+  scope :active, -> { where(is_stale: false) }
+  scope :stale, -> { where(is_stale: true) }
+
   
   # Team-specific scopes
   scope :last_n_for_team, ->(team, n) { for_team(team).with_results.recent_first.limit(n) }

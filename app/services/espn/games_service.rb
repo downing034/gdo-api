@@ -39,6 +39,9 @@ module Espn
         puts "  ❌ Error processing event #{event['id']}: #{e.message}"
       end
 
+      espn_event_ids = events.map { |e| e["id"] }
+      results[:games_marked_stale] = mark_stale_games(espn_event_ids)
+
       results
     end
 
@@ -119,26 +122,33 @@ module Espn
       game_status = map_status(status_type)
       game_state = status_type["state"]
 
-      # Find existing game(s) by identity (not start_time)
-      existing_games = Game.where(
-        league: @league,
-        game_date: game_date,
-        home_team: home_team,
-        away_team: away_team
-      )
+      espn_id = event["id"]
 
-      game = if existing_games.count == 0
-        Game.new(
+      # First try to find by external_id
+      game = Game.find_by(league: @league, external_id: espn_id)
+
+      # Fall back to matching by teams/date if no external_id match
+      if game.nil?
+        existing_games = Game.where(
           league: @league,
           game_date: game_date,
           home_team: home_team,
           away_team: away_team
         )
-      elsif existing_games.count == 1
-        existing_games.first
-      else
-        # Doubleheader - find closest start time
-        existing_games.min_by { |g| (g.start_time - game_datetime).abs }
+
+        game = if existing_games.count == 0
+          Game.new(
+            league: @league,
+            game_date: game_date,
+            home_team: home_team,
+            away_team: away_team
+          )
+        elsif existing_games.count == 1
+          existing_games.first
+        else
+          # Doubleheader - find closest start time
+          existing_games.min_by { |g| (g.start_time - game_datetime).abs }
+        end
       end
 
       is_new_game = game.new_record?
@@ -146,7 +156,9 @@ module Espn
       game.assign_attributes(
         season: season,
         status: game_status,
-        start_time: game_datetime
+        start_time: game_datetime,
+        external_id: espn_id,
+        is_stale: false
       )
 
       game.save!
@@ -172,9 +184,18 @@ module Espn
       end
 
       # Process scores for in-progress and final games
-        if game_state == "in" || (game_state == "post" && status_type["name"] == "STATUS_FINAL")
-          process_scores(game, home_competitor, away_competitor, game_state, results)
-        end
+      if game_state == "in" || (game_state == "post" && status_type["name"] == "STATUS_FINAL")
+        process_scores(game, home_competitor, away_competitor, game_state, results)
+      end
+    end
+
+    def mark_stale_games(espn_event_ids)
+      # Only mark future/today games as stale, not past games
+      Game.where(league: @league, game_date: @date)
+          .where(game_date: Date.current..)
+          .where.not(external_id: espn_event_ids)
+          .where(is_stale: false)
+          .update_all(is_stale: true)
     end
 
     def find_or_create_team(espn_abbreviation, espn_team_data, results)
