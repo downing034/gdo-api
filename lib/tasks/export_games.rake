@@ -12,11 +12,11 @@ change the gdo_pred if different pred are desired
 
 namespace :games do
   desc "Export games to CSV for predictions (default: today, override with date like ['2026-01-20'])"
-  task :export_ncaam, [:date, :include_header] => :environment do |t, args|
+  task :export_games, [:league, :date, :include_header] => :environment do |t, args|
     include_header = args[:include_header] != 'false'
 
     date = args[:date] ? Date.parse(args[:date]) : Date.current
-    league = League.find_by!(code: 'ncaam')
+    league = League.find_by!(code: args[:league])
     espn_source = DataSource.find_by!(code: 'espn')
     
     games = Game.includes(:home_team, :away_team, :game_result, :game_odds, :game_predictions)

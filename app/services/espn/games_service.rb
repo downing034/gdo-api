@@ -190,10 +190,9 @@ module Espn
     end
 
     def mark_stale_games(espn_event_ids)
-      # Only mark future/today games as stale, not past games
       Game.where(league: @league, game_date: @date)
           .where(game_date: Date.current..)
-          .where.not(external_id: espn_event_ids)
+          .where("external_id NOT IN (?) OR external_id IS NULL", espn_event_ids)
           .where(is_stale: false)
           .update_all(is_stale: true)
     end
@@ -395,15 +394,16 @@ module Espn
       home_score = home_competitor["score"]&.to_i
       away_score = away_competitor["score"]&.to_i
 
-      # Skip if no scores yet
       return unless home_score && away_score
 
       is_final = game_state == "post"
       
       result = GameResult.find_or_initialize_by(game: game)
       
-      # Update scores if changed or new
-      if result.new_record? || result.home_score != home_score || result.away_score != away_score
+      scores_changed = result.new_record? || result.home_score != home_score || result.away_score != away_score
+      final_changed = is_final && !result.final?
+
+      if scores_changed || final_changed
         was_new = result.new_record?
         
         result.assign_attributes(
@@ -413,9 +413,7 @@ module Espn
         )
         result.save!
         
-        if was_new
-          results[:results_created] += 1
-        end
+        results[:results_created] += 1 if was_new
         
         status_label = is_final ? "Final" : "Live"
         puts "  #{status_label}: #{game.away_team.code} #{away_score} - #{game.home_team.code} #{home_score}"

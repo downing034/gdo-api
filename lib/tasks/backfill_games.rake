@@ -2,10 +2,6 @@
 require 'csv'
 
 namespace :games do
-  # Current week constants - update these as seasons progress
-  MAX_NFL_WEEK = 20
-  MAX_NCAAF_WEEK = 16
-
   desc "Backfill MLB games from CSV file"
   task backfill_mlb: :environment do
     file_path = 'db/data/mlb_model_tracking.csv'
@@ -42,14 +38,18 @@ namespace :games do
     puts "Total games in database: #{Game.count}"
   end
 
-  desc "Backfill NFL games from CSV file"
-  task backfill_nfl: :environment do
-    backfill_league_games('nfl', MAX_NFL_WEEK, 'db/data/nfl_model_tracking.csv')
+  desc "Backfill NFL games from CSV file (default: all games, override with dates)"
+  task :backfill_nfl, [:start_date, :end_date] => :environment do |t, args|
+    start_date = args[:start_date] ? Date.parse(args[:start_date]) : Date.new(2000, 1, 1)
+    end_date = args[:end_date] ? Date.parse(args[:end_date]) : Date.new(2099, 12, 31)
+    backfill_date_based_league('nfl', start_date, end_date, 'db/data/nfl_model_tracking.csv')
   end
 
-  desc "Backfill NCAAF games from CSV file"  
-  task backfill_ncaaf: :environment do
-    backfill_league_games('ncaaf', MAX_NCAAF_WEEK, 'db/data/ncaaf_model_tracking.csv')
+  desc "Backfill NCAAF games from CSV file (default: all games, override with dates)"
+  task :backfill_ncaaf, [:start_date, :end_date] => :environment do |t, args|
+    start_date = args[:start_date] ? Date.parse(args[:start_date]) : Date.new(2000, 1, 1)
+    end_date = args[:end_date] ? Date.parse(args[:end_date]) : Date.new(2099, 12, 31)
+    backfill_date_based_league('ncaaf', start_date, end_date, 'db/data/ncaaf_model_tracking.csv')
   end
 
   # Task definition
@@ -147,43 +147,43 @@ namespace :games do
     [games_created, games_updated, results_created, predictions_created]
   end
 
-  def backfill_league_games(league_code, max_week, file_path)
-    unless File.exist?(file_path)
-      puts "Error: CSV file not found at #{file_path}"
-      exit 1
-    end
+  # def backfill_league_games(league_code, max_week, file_path)
+  #   unless File.exist?(file_path)
+  #     puts "Error: CSV file not found at #{file_path}"
+  #     exit 1
+  #   end
     
-    league = League.find_by!(code: league_code)
-    puts "Processing #{league_code.upcase} games from #{file_path}..."
-    puts "Including games up to and including week #{max_week}"
+  #   league = League.find_by!(code: league_code)
+  #   puts "Processing #{league_code.upcase} games from #{file_path}..."
+  #   puts "Including games up to and including week #{max_week}"
     
-    games_created = 0
-    games_updated = 0
-    results_created = 0
-    games_skipped = 0
-    odds_created = 0
-    predictions_created = 0
+  #   games_created = 0
+  #   games_updated = 0
+  #   results_created = 0
+  #   games_skipped = 0
+  #   odds_created = 0
+  #   predictions_created = 0
     
-    CSV.foreach(file_path, headers: true) do |row|
-      begin
-        result = process_week_game_row(row, league, max_week, games_created, games_updated, results_created, games_skipped, odds_created, predictions_created)
-        games_created, games_updated, results_created, games_skipped, odds_created, predictions_created = result
-      rescue => e
-        puts "\nError processing row #{row['id']}: #{e.message}"
-        puts "Row data: #{row.to_h}"
-        raise e if Rails.env.development?
-      end
-    end
+  #   CSV.foreach(file_path, headers: true) do |row|
+  #     begin
+  #       result = process_week_game_row(row, league, max_week, games_created, games_updated, results_created, games_skipped, odds_created, predictions_created)
+  #       games_created, games_updated, results_created, games_skipped, odds_created, predictions_created = result
+  #     rescue => e
+  #       puts "\nError processing row #{row['id']}: #{e.message}"
+  #       puts "Row data: #{row.to_h}"
+  #       raise e if Rails.env.development?
+  #     end
+  #   end
     
-    puts "\n\n#{league_code.upcase} backfill complete!"
-    puts "Games created: #{games_created}"
-    puts "Games updated: #{games_updated}"
-    puts "Results created: #{results_created}"
-    puts "Odds created: #{odds_created}"
-    puts "Predictions created: #{predictions_created}"
-    puts "Games skipped: #{games_skipped}"
-    puts "Total games in database: #{Game.count}"
-  end
+  #   puts "\n\n#{league_code.upcase} backfill complete!"
+  #   puts "Games created: #{games_created}"
+  #   puts "Games updated: #{games_updated}"
+  #   puts "Results created: #{results_created}"
+  #   puts "Odds created: #{odds_created}"
+  #   puts "Predictions created: #{predictions_created}"
+  #   puts "Games skipped: #{games_skipped}"
+  #   puts "Total games in database: #{Game.count}"
+  # end
 
   def backfill_date_based_league(league_code, start_date, end_date, file_path)
     unless File.exist?(file_path)
@@ -221,101 +221,6 @@ namespace :games do
     puts "Predictions created: #{predictions_created}"
     puts "Games skipped: #{games_skipped}"
     puts "Total games in database: #{Game.count}"
-  end
-
-  def process_date_game_row(row, league, start_date, end_date, games_created, games_updated, results_created, games_skipped, odds_created, predictions_created)
-    # Parse basic game info
-    game_date = Date.strptime(row['date'], '%Y%m%d')
-    
-    # Skip games outside the date range
-    if game_date < start_date || game_date > end_date
-      games_skipped += 1
-      return [games_created, games_updated, results_created, games_skipped, odds_created, predictions_created]
-    end
-    
-    home_team_code = normalize_team_code(row['home_team'])
-    away_team_code = normalize_team_code(row['away_team'])
-    
-    # Find teams
-    home_team = league.teams.find_by!(code: home_team_code)
-    away_team = league.teams.find_by!(code: away_team_code)
-    
-    # Find the season for this game date
-    season = Season.find_by!(
-      league: league,
-      start_date: ..game_date,
-      end_date: game_date..
-    )
-    
-    # Parse start time (MST format like "17:30")
-    start_time = if row['start_time'].present?
-      time_parts = row['start_time'].split(':')
-      hour = time_parts[0].to_i
-      minute = time_parts[1].to_i
-      game_date.in_time_zone('America/Denver').change(hour: hour, min: minute).utc
-    else
-      game_date.beginning_of_day.utc + 1.hour
-    end
-    
-    # Determine initial status based on whether we have results
-    has_results = row['away_result'].present? && row['home_result'].present?
-    initial_status = has_results ? :final : :scheduled
-    
-    # Find existing game(s) by identity (not start_time)
-    existing_games = Game.where(
-      league: league,
-      game_date: game_date,
-      home_team: home_team,
-      away_team: away_team
-    )
-
-    game = if existing_games.count == 0
-      Game.new(
-        league: league,
-        game_date: game_date,
-        home_team: home_team,
-        away_team: away_team
-      )
-    elsif existing_games.count == 1
-      existing_games.first
-    else
-      # Doubleheader - find closest start time
-      existing_games.min_by { |g| (g.start_time - start_time).abs }
-    end
-
-    is_new_game = game.new_record?
-
-    if is_new_game
-      game.assign_attributes(
-        season: season,
-        status: initial_status,
-        start_time: start_time
-      )
-      game.save!
-      games_created += 1
-      status_text = has_results ? "final" : "scheduled"
-      puts "Created: #{away_team_code} @ #{home_team_code} on #{game_date} (#{status_text})"
-    else
-      # Don't overwrite ESPN's start_time, only update status if needed
-      game.update!(status: initial_status) if game.scheduled? && has_results
-    end
-    
-    # Create game result if final scores are present (skip if ESPN already provided final result)
-    results_created += create_game_result(game, row, away_team_code, home_team_code)
-    
-    # Create game odds from CSV only if no ESPN odds exist
-    if game.game_odds.empty? && create_game_odds(game, row)
-      odds_created += 1
-    end
-    
-    # Create game predictions (NCAAM has sl and gdo_v1_pre)
-    predictions_created += create_game_predictions(game, row, [
-      { model: 'sl', away_col: 'sl_away_pred', home_col: 'sl_home_pred', source: 'sportsline' },
-      { model: 'gdo_v1_pre', away_col: 'gdo_away_pred', home_col: 'gdo_home_pred', source: 'gdo' }
-    ])
-    
-    print "."
-    [games_created, games_updated, results_created, games_skipped, odds_created, predictions_created]
   end
 
   def process_date_game_row(row, league, start_date, end_date, games_created, games_updated, results_created, games_skipped, odds_created, predictions_created)
