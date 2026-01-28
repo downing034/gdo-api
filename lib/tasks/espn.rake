@@ -1,4 +1,3 @@
-# lib/tasks/espn.rake
 namespace :espn do
   desc "Fetch games and odds from ESPN for a league and date"
   task :fetch_games, [:league, :date] => :environment do |t, args|

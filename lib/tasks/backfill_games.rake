@@ -1,4 +1,3 @@
-# lib/tasks/backfill_games.rake
 require 'csv'
 
 namespace :games do
@@ -104,13 +103,11 @@ namespace :games do
     # Find or create game
     game = Game.find_or_create_by(
       league: league,
-      game_date: game_date,
       start_time: start_time,
       home_team: home_team,
       away_team: away_team
     ) do |g|
       g.season = season
-      g.start_time = start_time
       g.status = initial_status
       games_created += 1
       status_text = has_results ? "final" : "scheduled"
@@ -262,20 +259,15 @@ namespace :games do
     initial_status = has_results ? :final : :scheduled
     
     # Find existing game(s) by identity (not start_time)
-    existing_games = Game.where(
+    existing_games = Game.where(league: league, home_team: home_team, away_team: away_team)
+                         .for_date(game_date)
+
+    game = if existing_games.count == 0
+    Game.new(
       league: league,
-      game_date: game_date,
       home_team: home_team,
       away_team: away_team
     )
-
-    game = if existing_games.count == 0
-      Game.new(
-        league: league,
-        game_date: game_date,
-        home_team: home_team,
-        away_team: away_team
-      )
     elsif existing_games.count == 1
       existing_games.first
     else

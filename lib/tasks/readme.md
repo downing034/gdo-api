@@ -10,11 +10,21 @@ rake ncaam:process SEASONS=24_25,25_26                               # Process m
 rake ncaam:process SEASONS=23_24,24_25,25_26                         # Process three seasons when ready
 rake ncaam:train                                                     # Train model
 rake ncaam:refresh                                                   # Process CSVs + train model
-rake ncaam:predict                                                   # Generate predictions for upcoming games
+rails ncaam:predict                                                  # Today and future (default)
+rails ncaam:predict[2026-01-27]                                      # Single date
+rails ncaam:predict[2026-01-25,2026-01-27]                           # Date range
+rails ncaam:predict[2026-01-25,2026-01-27,true]                      # Date range, include completed
+rails ncaam:predict[2026-01-25,,true]                                # Single date, include completed
 
 # Sweet Spot Analysis
 rails ncaam:sweet_spot                                               # Defaults (today/yesterday)
 rails ncaam:sweet_spot[2026-01-23,2026-01-22,2026-01-01,2026-01-22]  # [today, yesterday, stats_start, stats_end]
+
+# Model team and player data
+rails  export:team_stats[ncaam,2026-01-13,2026-01-24]                # Team stats - specific date range
+rails  export:team_stats[ncaam,2026-01-24]                           # Team stats - single date (uses as end date, start = end)
+rails  export:team_stats[ncaam]                                      # Team stats - defaults (yesterday only)
+rails  export:player_stats[ncaam,2026-01-13,2026-01-24]              # Player stats - same patterns
 
 # Export Games to CSV
 rails games:export_ncaam                                             # Today

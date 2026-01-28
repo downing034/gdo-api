@@ -6,7 +6,7 @@ class EspnFetchGamesJob < ApplicationJob
       'hourly' => [0],
       'every_4h' => [1],
       'twice_daily' => [2],
-      'daily' => [3, 4, 5],
+      'daily' => [3, 4],
       'yesterday_cleanup' => [-1]
     },
     'nfl' => {

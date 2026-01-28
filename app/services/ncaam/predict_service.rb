@@ -5,8 +5,11 @@ module Ncaam
     
     attr_reader :results
     
-    def initialize(model_version: 'v1')
+    def initialize(model_version: 'v1', start_date: nil, end_date: nil, include_completed_games: false)
       @model_version = model_version
+      @start_date = start_date
+      @end_date = end_date
+      @include_completed_games = include_completed_games
       @results = { created: 0, updated: 0, skipped: 0, errors: [] }
     end
     
@@ -22,14 +25,33 @@ module Ncaam
       data_source = DataSource.find_by!(code: 'gdo')
       predict_script = File.join(MODELS_DIR, 'predict.py')
       
-      games = Game.where(league: league)
-                  .where('game_date >= ?', Date.current)
-                  .where.not(id: GameResult.where(final: true).select(:game_id))
-                  .includes(:home_team, :away_team)
+      games = fetch_games(league)
       
       games.each do |game|
         predict_game(game, predict_script, data_source)
       end
+    end
+    
+    def fetch_games(league)
+      games = Game.where(league: league).includes(:home_team, :away_team)
+      
+      # Apply date filters
+      games = if @start_date && @end_date
+        start_time_begin = @start_date.in_time_zone('America/Denver').beginning_of_day.utc
+        start_time_end = @end_date.in_time_zone('America/Denver').end_of_day.utc
+        games.where(start_time: start_time_begin..start_time_end)
+      elsif @start_date
+        games.for_date(@start_date)
+      else
+        games.where('start_time >= ?', Date.current.in_time_zone('America/Denver').beginning_of_day.utc)
+      end
+      
+      # Exclude completed games unless flag is set
+      unless @include_completed_games
+        games = games.where.not(id: GameResult.where(final: true).select(:game_id))
+      end
+      
+      games
     end
     
     def predict_game(game, predict_script, data_source)

@@ -66,7 +66,8 @@ module Ncaam
 
     def games_for_date(date)
       Game.includes(:home_team, :away_team, :game_result, :game_odds, :game_predictions)
-          .where(league: @league, game_date: date)
+          .where(league: @league)
+          .for_date(date)
           .order(:start_time)
     end
 
@@ -78,8 +79,11 @@ module Ncaam
     end
 
     def accuracy_stats(start_date:, end_date:)
+      start_time_begin = start_date.in_time_zone('America/Denver').beginning_of_day.utc
+      start_time_end = end_date.in_time_zone('America/Denver').end_of_day.utc
+
       games = Game.includes(:home_team, :away_team, :game_result, :game_odds, :game_predictions)
-                  .where(league: @league, game_date: start_date..end_date)
+                  .where(league: @league, start_time: start_time_begin..start_time_end)
                   .where(status: 'final')
 
       analyses = games.map { |g| analyze_game(g) }.compact

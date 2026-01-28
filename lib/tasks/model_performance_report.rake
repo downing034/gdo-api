@@ -7,10 +7,13 @@ namespace :models do
     
     league = League.find_by!(code: league_code)
     
+    start_time_begin = start_date.in_time_zone('America/Denver').beginning_of_day.utc
+    start_time_end = end_date.in_time_zone('America/Denver').end_of_day.utc
+
     games = Game.includes(:home_team, :away_team, :game_result, :game_predictions, :game_odds)
-                .where(league: league, game_date: start_date..end_date, status: 'final')
-                .joins(:game_result)
-                .where(game_results: { final: true })
+                .where(league: league)
+                .where(start_time: start_time_begin..start_time_end)
+                .where(status: 'final')
     
     if games.empty?
       puts "No final games with results for #{league_code.upcase} #{start_date}#{end_date != start_date ? " to #{end_date}" : ""}"

@@ -29,9 +29,13 @@ namespace :ncaam do
     system("#{venv_python} #{train_script}") || raise("Training failed")
   end
 
-  desc "Generate predictions for upcoming games"
-  task predict: :environment do
-    results = Ncaam::PredictService.new.call
+  desc "Generate predictions for upcoming games (optional: date or date range, include_completed_games=true to include final games)"
+  task :predict, [:start_date, :end_date, :include_completed_games] => :environment do |t, args|
+    start_date = args[:start_date] ? Date.parse(args[:start_date]) : nil
+    end_date = args[:end_date] ? Date.parse(args[:end_date]) : nil
+    include_completed_games = args[:include_completed_games] == 'true'
+    
+    results = Ncaam::PredictService.new(start_date: start_date, end_date: end_date, include_completed_games: include_completed_games).call
     
     puts "Created: #{results[:created]}"
     puts "Updated: #{results[:updated]}"

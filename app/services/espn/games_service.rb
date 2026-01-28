@@ -29,6 +29,9 @@ module Espn
         odds_skipped: 0,
         results_created: 0,
         teams_created: 0,
+        players_created: 0,
+        team_stats_created: 0,
+        player_stats_created: 0,
         errors: []
       }
 
@@ -46,6 +49,15 @@ module Espn
     end
 
     private
+
+    def find_season_for_datetime(datetime)
+      game_date = datetime.in_time_zone('America/Denver').to_date
+      Season.find_by(
+        league: @league,
+        start_date: ..game_date,
+        end_date: game_date..
+      )
+    end
 
     def fetch_scoreboard
       url = build_url
@@ -77,6 +89,24 @@ module Espn
       "#{url}?#{params.join('&')}"
     end
 
+    def fetch_boxscore(event_id)
+      url = "#{BASE_URL}/#{@config[:sport]}/#{@config[:league_path]}/summary?event=#{event_id}"
+      puts "  Fetching boxscore: #{url}"
+      
+      uri = URI(url)
+      http = Net::HTTP.new(uri.host, uri.port)
+      http.use_ssl = true
+      http.verify_mode = OpenSSL::SSL::VERIFY_NONE
+      
+      request = Net::HTTP::Get.new(uri)
+      response = http.request(request)
+      
+      JSON.parse(response.body)
+    rescue => e
+      puts "  ❌ Boxscore fetch failed: #{e.message}"
+      nil
+    end
+
     def process_event(event, results)
       competition = event.dig("competitions", 0)
       return unless competition
@@ -102,19 +132,13 @@ module Espn
       end
 
       game_datetime = Time.parse(event["date"]).utc
-      game_date = game_datetime.in_time_zone('America/Denver').to_date
-
-      season = Season.find_by(
-        league: @league,
-        start_date: ..game_date,
-        end_date: game_date..
-      )
+      season = find_season_for_datetime(game_datetime)
 
       unless season
         results[:errors] << {
           event_id: event["id"],
-          error: "No season found for date #{game_date}"
-        }
+          error: "No season found for date #{game_datetime}" 
+        } 
         return
       end
 
@@ -129,17 +153,12 @@ module Espn
 
       # Fall back to matching by teams/date if no external_id match
       if game.nil?
-        existing_games = Game.where(
-          league: @league,
-          game_date: game_date,
-          home_team: home_team,
-          away_team: away_team
-        )
+        existing_games = Game.where(league: @league, home_team: home_team, away_team: away_team)
+                          .for_date(game_datetime.in_time_zone('America/Denver').to_date)
 
         game = if existing_games.count == 0
           Game.new(
             league: @league,
-            game_date: game_date,
             home_team: home_team,
             away_team: away_team
           )
@@ -165,10 +184,10 @@ module Espn
 
       if is_new_game
         results[:games_created] += 1
-        puts "Created: #{away_team.code} @ #{home_team.code} on #{game_date} at #{game_datetime.strftime('%H:%M')} UTC"
+        puts "Created: #{away_team.code} @ #{home_team.code} on #{game_datetime.strftime('%Y-%m-%d %H:%M')} UTC"
       else
         results[:games_updated] += 1
-        puts "Updated: #{away_team.code} @ #{home_team.code} on #{game_date}"
+        puts "Updated: #{away_team.code} @ #{home_team.code} on #{game_datetime.strftime('%Y-%m-%d')}"
       end
 
       # Process odds only for pre-game status
@@ -185,14 +204,219 @@ module Espn
 
       # Process scores for in-progress and final games
       if game_state == "in" || (game_state == "post" && status_type["name"] == "STATUS_FINAL")
-        process_scores(game, home_competitor, away_competitor, game_state, results)
+        process_scores(game, home_competitor, away_competitor, game_state, status_type, results)
+      end
+
+      # Process boxscore stats for final basketball games only
+      if game_state == "post" && status_type["name"] == "STATUS_FINAL"
+        if @config[:sport] == "basketball"
+          process_boxscore_if_needed(game, espn_id, results)
+        end
+      end
+
+      game.final! if game_state == "post" && status_type["name"] == "STATUS_FINAL" && !game.final?
+    end
+
+    def process_boxscore_if_needed(game, espn_id, results)
+      puts "  Checking boxscore for #{game.away_team.code} @ #{game.home_team.code}"
+      if game.basketball_game_team_stats.exists?
+        puts "    Skipping - stats exist"
+        return
+      end
+      puts "    Fetching boxscore..."
+      # Skip if we already have team stats for this game
+      return if game.basketball_game_team_stats.exists?
+
+      boxscore_response = fetch_boxscore(espn_id)
+      return unless boxscore_response
+
+      boxscore = boxscore_response["boxscore"]
+      return unless boxscore
+
+      process_team_stats(game, boxscore["teams"], results) if boxscore["teams"]
+      process_player_stats(game, boxscore["players"], results) if boxscore["players"]
+    end
+
+    def process_team_stats(game, teams_data, results)
+      teams_data.each do |team_data|
+        espn_team_id = team_data.dig("team", "id")
+        home_away = team_data["homeAway"]
+        
+        team = home_away == "home" ? game.home_team : game.away_team
+        
+        stats = parse_team_statistics(team_data["statistics"])
+        
+        BasketballGameTeamStat.create!(
+          game: game,
+          team: team,
+          **stats
+        )
+        
+        results[:team_stats_created] += 1
+        puts "    Team stats saved: #{team.code}"
+      end
+    end
+
+    def parse_team_statistics(statistics)
+      stats = {}
+      stat_map = {
+        'fieldGoalsMade-fieldGoalsAttempted' => [:field_goals_made, :field_goals_attempted],
+        'threePointFieldGoalsMade-threePointFieldGoalsAttempted' => [:three_pointers_made, :three_pointers_attempted],
+        'freeThrowsMade-freeThrowsAttempted' => [:free_throws_made, :free_throws_attempted],
+        'offensiveRebounds' => :offensive_rebounds,
+        'defensiveRebounds' => :defensive_rebounds,
+        'assists' => :assists,
+        'steals' => :steals,
+        'blocks' => :blocks,
+        'turnovers' => :turnovers,
+        'fouls' => :fouls,
+        'turnoverPoints' => :points_off_turnovers,
+        'fastBreakPoints' => :fast_break_points,
+        'pointsInPaint' => :points_in_paint,
+        'largestLead' => :largest_lead,
+        'leadChanges' => :lead_changes,
+        'leadPercentage' => :time_leading_pct
+      }
+
+      statistics.each do |stat|
+        name = stat["name"]
+        value = stat["displayValue"]
+        
+        next unless stat_map.key?(name)
+        
+        mapping = stat_map[name]
+        
+        if mapping.is_a?(Array)
+          # Split field like "27-66"
+          parts = value.split('-').map(&:to_i)
+          stats[mapping[0]] = parts[0]
+          stats[mapping[1]] = parts[1]
+        elsif name == 'leadPercentage'
+          stats[mapping] = value.to_d
+        else
+          stats[mapping] = value.to_i
+        end
+      end
+
+      stats
+    end
+
+    def process_player_stats(game, players_data, results)
+      players_data.each do |team_player_data|
+        espn_team_id = team_player_data.dig("team", "id")
+        home_away = team_player_data["homeAway"] || infer_home_away(game, team_player_data)
+        
+        team = home_away == "home" ? game.home_team : game.away_team
+        
+        statistics_block = team_player_data["statistics"]&.first
+        return unless statistics_block
+
+        keys = statistics_block["keys"]
+        athletes = statistics_block["athletes"]
+
+        athletes.each do |athlete_data|
+          next if athlete_data["didNotPlay"]
+          
+          athlete = athlete_data["athlete"]
+          player = find_or_create_player(athlete, team, results)
+          
+          stats = parse_player_statistics(keys, athlete_data["stats"])
+          
+          BasketballGamePlayerStat.create!(
+            game: game,
+            player: player,
+            team: team,
+            **stats
+          )
+          
+          results[:player_stats_created] += 1
+        end
+        
+        puts "    Player stats saved: #{team.code} (#{athletes.count { |a| !a['didNotPlay'] }} players)"
+      end
+    end
+
+    def parse_player_statistics(keys, stats)
+      result = {}
+      
+      key_map = {
+        'minutes' => :minutes_played,
+        'points' => :points,
+        'fieldGoalsMade-fieldGoalsAttempted' => [:field_goals_made, :field_goals_attempted],
+        'threePointFieldGoalsMade-threePointFieldGoalsAttempted' => [:three_pointers_made, :three_pointers_attempted],
+        'freeThrowsMade-freeThrowsAttempted' => [:free_throws_made, :free_throws_attempted],
+        'offensiveRebounds' => :offensive_rebounds,
+        'defensiveRebounds' => :defensive_rebounds,
+        'assists' => :assists,
+        'steals' => :steals,
+        'blocks' => :blocks,
+        'turnovers' => :turnovers,
+        'fouls' => :fouls
+      }
+
+      keys.each_with_index do |key, index|
+        next unless key_map.key?(key)
+        
+        value = stats[index]
+        mapping = key_map[key]
+        
+        if mapping.is_a?(Array)
+          parts = value.split('-').map(&:to_i)
+          result[mapping[0]] = parts[0]
+          result[mapping[1]] = parts[1]
+        else
+          result[mapping] = value.to_i
+        end
+      end
+
+      result
+    end
+
+    def find_or_create_player(athlete_data, team, results)
+      espn_id = athlete_data["id"]
+      
+      # Find existing player by ESPN ID
+      player = Player.find_by(data_source: @espn_source, external_id: espn_id)
+      return player if player
+
+      # Create new player
+      player = Player.create!(
+        external_id: espn_id,
+        data_source: @espn_source,
+        team: team,
+        name: athlete_data["displayName"],
+        position: athlete_data.dig("position", "abbreviation"),
+        active: true
+      )
+
+      results[:players_created] += 1
+      puts "      New player: #{player.name} (#{player.position})"
+
+      player
+    end
+
+    def infer_home_away(game, team_player_data)
+      espn_abbr = team_player_data.dig("team", "abbreviation")
+      identifier = TeamIdentifier.find_by(
+        data_source: @espn_source,
+        league: @league,
+        external_code: espn_abbr
+      )
+      
+      if identifier&.team == game.home_team
+        "home"
+      else
+        "away"
       end
     end
 
     def mark_stale_games(espn_event_ids)
-      Game.where(league: @league, game_date: @date)
-          .where(game_date: Date.current..)
-          .where("external_id NOT IN (?) OR external_id IS NULL", espn_event_ids)
+      start_of_day = @date.in_time_zone('America/Denver').beginning_of_day.utc
+      end_of_day = @date.in_time_zone('America/Denver').end_of_day.utc
+
+      Game.where(league: @league, start_time: start_of_day..end_of_day)
+          .where(start_time: Time.current..)
+          .where.not(external_id: espn_event_ids)
           .where(is_stale: false)
           .update_all(is_stale: true)
     end
@@ -390,26 +614,29 @@ module Espn
         existing.moneyline_underdog_odds != new_odds[:moneyline_underdog_odds]
     end
 
-    def process_scores(game, home_competitor, away_competitor, game_state, results)
+    def process_scores(game, home_competitor, away_competitor, game_state, status_type, results)
       home_score = home_competitor["score"]&.to_i
       away_score = away_competitor["score"]&.to_i
 
       return unless home_score && away_score
 
       is_final = game_state == "post"
+      period = status_type["period"]
       
       result = GameResult.find_or_initialize_by(game: game)
-      
+
+      period_changed = result.period != period
       scores_changed = result.new_record? || result.home_score != home_score || result.away_score != away_score
       final_changed = is_final && !result.final?
 
-      if scores_changed || final_changed
+      if scores_changed || final_changed || period_changed
         was_new = result.new_record?
         
         result.assign_attributes(
           home_score: home_score,
           away_score: away_score,
-          final: is_final
+          final: is_final,
+          period: period
         )
         result.save!
         
@@ -418,8 +645,6 @@ module Espn
         status_label = is_final ? "Final" : "Live"
         puts "  #{status_label}: #{game.away_team.code} #{away_score} - #{game.home_team.code} #{home_score}"
       end
-
-      game.final! if is_final && !game.final?
     end
   end
 end

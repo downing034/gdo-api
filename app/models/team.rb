@@ -3,6 +3,9 @@ class Team < ApplicationRecord
   has_many :leagues, through: :leagues_teams
   belongs_to :venue, optional: true
   has_many :team_identifiers, dependent: :destroy
+  has_many :players
+  has_many :basketball_game_team_stats, dependent: :destroy
+  has_many :basketball_game_player_stats, dependent: :destroy
 
   validates :code, presence: true, uniqueness: true
   validates :nickname, presence: true

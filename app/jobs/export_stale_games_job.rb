@@ -6,9 +6,12 @@ class ExportStaleGamesJob < ApplicationJob
     
     stale_games = Game.includes(:home_team, :away_team)
                       .where(league: league, is_stale: true)
-                      .order(:game_date, :start_time)
+                      .order(:start_time)
     
-    return if stale_games.empty?
+    if stale_games.empty?
+      puts "No stale games found for #{league_code}"
+      return
+    end
     
     dir = "db/data/#{league_code}/stale"
     FileUtils.mkdir_p(dir)

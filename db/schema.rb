@@ -10,10 +10,67 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_01_24_183431) do
+ActiveRecord::Schema[8.0].define(version: 2026_01_27_180940) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
+
+  create_table "basketball_game_player_stats", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "game_id", null: false
+    t.uuid "player_id", null: false
+    t.uuid "team_id", null: false
+    t.integer "minutes_played"
+    t.integer "points"
+    t.integer "field_goals_made"
+    t.integer "field_goals_attempted"
+    t.integer "three_pointers_made"
+    t.integer "three_pointers_attempted"
+    t.integer "free_throws_made"
+    t.integer "free_throws_attempted"
+    t.integer "offensive_rebounds"
+    t.integer "defensive_rebounds"
+    t.integer "assists"
+    t.integer "steals"
+    t.integer "blocks"
+    t.integer "turnovers"
+    t.integer "fouls"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["game_id", "player_id"], name: "index_basketball_game_player_stats_on_game_id_and_player_id", unique: true
+    t.index ["game_id"], name: "index_basketball_game_player_stats_on_game_id"
+    t.index ["player_id", "game_id"], name: "idx_bb_player_stats_player_game"
+    t.index ["player_id"], name: "index_basketball_game_player_stats_on_player_id"
+    t.index ["team_id"], name: "index_basketball_game_player_stats_on_team_id"
+  end
+
+  create_table "basketball_game_team_stats", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "game_id", null: false
+    t.uuid "team_id", null: false
+    t.integer "field_goals_made"
+    t.integer "field_goals_attempted"
+    t.integer "three_pointers_made"
+    t.integer "three_pointers_attempted"
+    t.integer "free_throws_made"
+    t.integer "free_throws_attempted"
+    t.integer "offensive_rebounds"
+    t.integer "defensive_rebounds"
+    t.integer "assists"
+    t.integer "steals"
+    t.integer "blocks"
+    t.integer "turnovers"
+    t.integer "fouls"
+    t.integer "points_off_turnovers"
+    t.integer "fast_break_points"
+    t.integer "points_in_paint"
+    t.integer "largest_lead"
+    t.integer "lead_changes"
+    t.decimal "time_leading_pct", precision: 5, scale: 2
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["game_id", "team_id"], name: "index_basketball_game_team_stats_on_game_id_and_team_id", unique: true
+    t.index ["game_id"], name: "index_basketball_game_team_stats_on_game_id"
+    t.index ["team_id"], name: "index_basketball_game_team_stats_on_team_id"
+  end
 
   create_table "data_sources", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.string "code"
@@ -74,12 +131,12 @@ ActiveRecord::Schema[8.0].define(version: 2026_01_24_183431) do
     t.text "notes"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.integer "period"
     t.index ["game_id"], name: "index_game_results_on_game_id", unique: true
   end
 
   create_table "games", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.uuid "league_id", null: false
-    t.date "game_date", null: false
     t.uuid "home_team_id", null: false
     t.uuid "away_team_id", null: false
     t.datetime "start_time"
@@ -92,8 +149,6 @@ ActiveRecord::Schema[8.0].define(version: 2026_01_24_183431) do
     t.index ["away_team_id"], name: "index_games_on_away_team_id"
     t.index ["home_team_id"], name: "index_games_on_home_team_id"
     t.index ["league_id", "external_id"], name: "index_games_on_league_id_and_external_id", unique: true
-    t.index ["league_id", "game_date", "home_team_id", "away_team_id", "start_time"], name: "index_games_on_unique_game", unique: true
-    t.index ["league_id", "game_date"], name: "index_games_on_league_id_and_game_date"
     t.index ["league_id"], name: "index_games_on_league_id"
     t.index ["season_id"], name: "index_games_on_season_id"
     t.check_constraint "home_team_id <> away_team_id", name: "games_different_teams"
@@ -117,6 +172,20 @@ ActiveRecord::Schema[8.0].define(version: 2026_01_24_183431) do
     t.uuid "team_id", null: false
     t.index ["league_id", "team_id"], name: "index_leagues_teams_on_league_id_and_team_id", unique: true
     t.index ["team_id", "league_id"], name: "index_leagues_teams_on_team_id_and_league_id"
+  end
+
+  create_table "players", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.string "external_id", null: false
+    t.uuid "data_source_id", null: false
+    t.uuid "team_id"
+    t.string "name", null: false
+    t.string "position"
+    t.boolean "active", default: true, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["data_source_id", "external_id"], name: "index_players_on_data_source_id_and_external_id", unique: true
+    t.index ["data_source_id"], name: "index_players_on_data_source_id"
+    t.index ["team_id"], name: "index_players_on_team_id"
   end
 
   create_table "seasons", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -302,6 +371,11 @@ ActiveRecord::Schema[8.0].define(version: 2026_01_24_183431) do
     t.index ["name"], name: "index_venues_on_name", unique: true
   end
 
+  add_foreign_key "basketball_game_player_stats", "games"
+  add_foreign_key "basketball_game_player_stats", "players"
+  add_foreign_key "basketball_game_player_stats", "teams"
+  add_foreign_key "basketball_game_team_stats", "games"
+  add_foreign_key "basketball_game_team_stats", "teams"
   add_foreign_key "game_odds", "data_sources"
   add_foreign_key "game_odds", "games"
   add_foreign_key "game_odds", "teams", column: "moneyline_favorite_team_id"
@@ -315,6 +389,8 @@ ActiveRecord::Schema[8.0].define(version: 2026_01_24_183431) do
   add_foreign_key "games", "teams", column: "away_team_id"
   add_foreign_key "games", "teams", column: "home_team_id"
   add_foreign_key "leagues", "sports"
+  add_foreign_key "players", "data_sources"
+  add_foreign_key "players", "teams"
   add_foreign_key "seasons", "leagues"
   add_foreign_key "solid_queue_blocked_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
   add_foreign_key "solid_queue_claimed_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade

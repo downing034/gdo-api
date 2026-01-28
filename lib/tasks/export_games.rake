@@ -20,7 +20,10 @@ namespace :games do
     espn_source = DataSource.find_by!(code: 'espn')
     
     games = Game.includes(:home_team, :away_team, :game_result, :game_odds, :game_predictions)
-                .where(league: league, game_date: date)
+                .where(league: league)
+                .for_date(date)
+                .active
+                .playable
                 .order(:start_time)
     
     if include_header
@@ -29,7 +32,7 @@ namespace :games do
     
     games.each_with_index do |game, index|
       id = index + 1
-      game_date = game.game_date.strftime('%Y%m%d')
+      game_date = game.game_date&.strftime('%Y%m%d')
       start_time = game.start_time.in_time_zone('America/Denver').strftime('%H:%M')
       away_team = game.away_team.code
       home_team = game.home_team.code
