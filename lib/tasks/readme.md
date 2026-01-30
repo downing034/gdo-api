@@ -10,11 +10,11 @@ rake ncaam:process SEASONS=24_25,25_26                               # Process m
 rake ncaam:process SEASONS=23_24,24_25,25_26                         # Process three seasons when ready
 rake ncaam:train                                                     # Train model
 rake ncaam:refresh                                                   # Process CSVs + train model
-rails ncaam:predict                                                  # Today and future (default)
-rails ncaam:predict[2026-01-27]                                      # Single date
-rails ncaam:predict[2026-01-25,2026-01-27]                           # Date range
-rails ncaam:predict[2026-01-25,2026-01-27,true]                      # Date range, include completed
-rails ncaam:predict[2026-01-25,,true]                                # Single date, include completed
+
+rails ncaam:predict                                                  # Today, both v1 and v2
+rails ncaam:predict[2026-01-27]                                      # Specific date
+rails ncaam:predict[2026-01-27,2026-01-28]                           # Date range
+rails ncaam:predict[2026-01-27,,true]                                # Include completed games
 
 # Sweet Spot Analysis
 rails ncaam:sweet_spot                                               # Defaults (today/yesterday)
@@ -27,10 +27,10 @@ rails  export:team_stats[ncaam]                                      # Team stat
 rails  export:player_stats[ncaam,2026-01-13,2026-01-24]              # Player stats - same patterns
 
 # Export Games to CSV
-rails games:export_ncaam                                             # Today
-rails games:export_ncaam[2026-01-23]                                 # Specific date
-rails games:export_ncaam[2026-01-23,true]                            # With header
-rails games:export_ncaam[2026-01-23] | pbcopy                        # directly to clipboard
+rails games:export_games                                             # Today
+rails games:export_games[ncaam,2026-01-23]                           # Specific date
+rails games:export_games[ncaam,2026-01-23,false]                     # Without header
+rails games:export_games[ncaam,2026-01-23] | pbcopy                  # directly to clipboard
 
 # Export Stale Games
 rails games:export_stale[ncaam]                                      # Export stale NCAAM games to CSV

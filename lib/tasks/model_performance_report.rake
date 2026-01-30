@@ -20,7 +20,7 @@ namespace :models do
       exit 0
     end
     
-    models = ['v1', 'sl']
+    models = ['v1', 'v2_vegas', 'v2_no_vegas', 'sl']
     espn_source = DataSource.find_by!(code: 'espn')
     
     # Model stats
@@ -39,6 +39,21 @@ namespace :models do
         games_with_ou: 0
       }
     end
+    
+    # Combined v2 stats (best of vegas or no_vegas for each game)
+    stats['v2_combined'] = {
+      games: 0,
+      ml_correct: 0,
+      ats_correct: 0,
+      ats_push: 0,
+      ou_over_correct: 0,
+      ou_under_correct: 0,
+      ou_push: 0,
+      total_error_away: 0,
+      total_error_home: 0,
+      games_with_odds: 0,
+      games_with_ou: 0
+    }
     
     # Oddsmaker stats
     odds_stats = {
@@ -85,8 +100,16 @@ namespace :models do
         end
       end
       
-      models.each do |model|
-        pred = game.game_predictions.find { |p| p.model_version == model }
+      # Find v2 combined prediction (prefer vegas, fallback to no_vegas)
+      v2_combined_pred = game.game_predictions.find { |p| p.model_version == 'v2_vegas' } ||
+                         game.game_predictions.find { |p| p.model_version == 'v2_no_vegas' }
+      
+      (models + ['v2_combined']).each do |model|
+        pred = if model == 'v2_combined'
+          v2_combined_pred
+        else
+          game.game_predictions.find { |p| p.model_version == model }
+        end
         next unless pred
         
         s = stats[model]
@@ -150,6 +173,7 @@ namespace :models do
     end
     
     # Output
+    all_models = ['v1', 'v2_combined', 'v2_vegas', 'v2_no_vegas', 'sl']
     date_range = start_date == end_date ? start_date.to_s : "#{start_date} to #{end_date}"
     puts "=" * 60
     puts "Model Performance: #{league_code.upcase} #{date_range} (#{games.count} games)"
@@ -162,11 +186,12 @@ namespace :models do
       ml_pct = (odds_stats[:ml_correct].to_f / odds_stats[:ml_games] * 100).round(1)
       puts "Oddsmaker:      #{odds_stats[:ml_correct]}/#{odds_stats[:ml_games]} (#{ml_pct}%)"
     end
-    models.each do |model|
+    all_models.each do |model|
       s = stats[model]
       next if s[:games] == 0
       ml_pct = (s[:ml_correct].to_f / s[:games] * 100).round(1)
-      puts "#{model.upcase.ljust(14)}#{s[:ml_correct]}/#{s[:games]} (#{ml_pct}%)"
+      label = model.upcase.gsub('_', ' ')
+      puts "#{label.ljust(14)}#{s[:ml_correct]}/#{s[:games]} (#{ml_pct}%)"
     end
     
     # ATS
@@ -177,36 +202,39 @@ namespace :models do
       ats_pct = ats_decided > 0 ? (odds_stats[:ats_correct].to_f / ats_decided * 100).round(1) : 0
       puts "Oddsmaker:      #{odds_stats[:ats_correct]}/#{ats_decided} (#{ats_pct}%) [#{odds_stats[:ats_push]} push]"
     end
-    models.each do |model|
+    all_models.each do |model|
       s = stats[model]
       next if s[:games_with_odds] == 0
       ats_decided = s[:games_with_odds] - s[:ats_push]
       ats_pct = ats_decided > 0 ? (s[:ats_correct].to_f / ats_decided * 100).round(1) : 0
-      puts "#{model.upcase.ljust(14)}#{s[:ats_correct]}/#{ats_decided} (#{ats_pct}%) [#{s[:ats_push]} push]"
+      label = model.upcase.gsub('_', ' ')
+      puts "#{label.ljust(14)}#{s[:ats_correct]}/#{ats_decided} (#{ats_pct}%) [#{s[:ats_push]} push]"
     end
     
     # Over/Under
     puts "\nOVER/UNDER"
     puts "-" * 40
-    models.each do |model|
+    all_models.each do |model|
       s = stats[model]
       next if s[:games_with_ou] == 0
       ou_correct = s[:ou_over_correct] + s[:ou_under_correct]
       ou_decided = s[:games_with_ou] - s[:ou_push]
       ou_pct = ou_decided > 0 ? (ou_correct.to_f / ou_decided * 100).round(1) : 0
-      puts "#{model.upcase.ljust(14)}#{ou_correct}/#{ou_decided} (#{ou_pct}%) [#{s[:ou_push]} push]"
+      label = model.upcase.gsub('_', ' ')
+      puts "#{label.ljust(14)}#{ou_correct}/#{ou_decided} (#{ou_pct}%) [#{s[:ou_push]} push]"
     end
     
     # MAE
     puts "\nMAE"
     puts "-" * 40
-    models.each do |model|
+    all_models.each do |model|
       s = stats[model]
       next if s[:games] == 0
       mae_away = (s[:total_error_away] / s[:games]).round(1)
       mae_home = (s[:total_error_home] / s[:games]).round(1)
       mae_avg = ((mae_away + mae_home) / 2).round(1)
-      puts "#{model.upcase.ljust(14)}#{mae_avg} (away: #{mae_away}, home: #{mae_home})"
+      label = model.upcase.gsub('_', ' ')
+      puts "#{label.ljust(14)}#{mae_avg} (away: #{mae_away}, home: #{mae_home})"
     end
     
     puts "\n"

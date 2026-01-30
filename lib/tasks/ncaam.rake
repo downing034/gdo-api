@@ -19,14 +19,40 @@ namespace :ncaam do
 
   desc "Train the prediction model"
   task train: :environment do
-    puts "=" * 60
-    puts "Training model..."
-    puts "=" * 60
-    
     venv_python = Rails.root.join('db', 'data', 'ncaam', 'venv', 'bin', 'python')
-    train_script = Rails.root.join('db', 'data', 'ncaam', 'models', 'v1', 'train_model.py')
+    data_dir = Rails.root.join('db', 'data', 'ncaam')
     
-    system("#{venv_python} #{train_script}") || raise("Training failed")
+    # Train v1
+    puts "=" * 60
+    puts "Training v1 model..."
+    puts "=" * 60
+    
+    v1_script = Rails.root.join('db', 'data', 'ncaam', 'models', 'v1', 'train_model.py')
+    system("#{venv_python} #{v1_script}") || raise("V1 training failed")
+    
+    # Train v2
+    puts
+    puts "=" * 60
+    puts "Training v2 models (vegas + no-vegas)..."
+    puts "=" * 60
+    
+    v2_script = data_dir.join('models', 'v2', 'train.py')
+    v2_cmd = [
+      venv_python.to_s,
+      v2_script.to_s,
+      "--bart-games", data_dir.join('processed', 'base_model_game_data_with_rolling.csv').to_s,
+      "--bart-season", data_dir.join('processed', 'ncaam_team_data_final.csv').to_s,
+      "--espn-team", data_dir.join('raw', 'team_stats.csv').to_s,
+      "--espn-player", data_dir.join('raw', 'player_stats.csv').to_s,
+      "--output-dir", data_dir.join('models', 'v2').to_s
+    ].join(' ')
+    
+    system(v2_cmd) || raise("V2 training failed")
+    
+    puts
+    puts "=" * 60
+    puts "Training complete!"
+    puts "=" * 60
   end
 
   desc "Generate predictions for upcoming games (optional: date or date range, include_completed_games=true to include final games)"
@@ -35,19 +61,27 @@ namespace :ncaam do
     end_date = args[:end_date] ? Date.parse(args[:end_date]) : nil
     include_completed_games = args[:include_completed_games] == 'true'
     
-    results = Ncaam::PredictService.new(start_date: start_date, end_date: end_date, include_completed_games: include_completed_games).call
-    
-    puts "Created: #{results[:created]}"
-    puts "Updated: #{results[:updated]}"
-    puts "Skipped: #{results[:skipped]}"
-    puts "Errors: #{results[:errors].count}"
-    
-    if results[:errors].any?
-      puts "\nErrors:"
-      results[:errors].each { |e| puts "  #{e}" }
+    %w[v1 v2].each do |version|
+      puts "\n=== Running #{version} predictions ==="
+      results = Ncaam::PredictService.new(
+        model_version: version,
+        start_date: start_date, 
+        end_date: end_date, 
+        include_completed_games: include_completed_games
+      ).call
+      
+      puts "Created: #{results[:created]}"
+      puts "Updated: #{results[:updated]}"
+      puts "Skipped: #{results[:skipped]}"
+      puts "Errors: #{results[:errors].count}"
+      
+      if results[:errors].any?
+        puts "\nErrors:"
+        results[:errors].each { |e| puts "  #{e}" }
+      end
     end
   end
-  
+    
   desc "Process data and train model (run after dropping new CSVs)"
   task refresh: :environment do
     results = Ncaam::RefreshService.new.call
