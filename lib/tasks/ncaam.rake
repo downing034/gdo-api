@@ -1,0 +1,215 @@
+namespace :ncaam do
+  desc "Process raw CSVs into model-ready data"
+  task process: :environment do
+    puts "=" * 60
+    puts "Processing raw data..."
+    puts "=" * 60
+    
+    # Check for SEASONS env var, default to current season only
+    seasons = if ENV['SEASONS']
+      ENV['SEASONS'].split(',').map(&:strip)
+    else
+      ['25_26']
+    end
+    
+    puts "Seasons: #{seasons.join(', ')}"
+    
+    Ncaam::DataProcessorService.new(seasons: seasons).call
+  end
+
+  desc "Train the prediction model"
+  task train: :environment do
+    venv_python = Rails.root.join('db', 'data', 'ncaam', 'venv', 'bin', 'python')
+    data_dir = Rails.root.join('db', 'data', 'ncaam')
+    
+    # Train v1
+    puts "=" * 60
+    puts "Training v1 model..."
+    puts "=" * 60
+    
+    v1_script = Rails.root.join('db', 'data', 'ncaam', 'models', 'v1', 'train_model.py')
+    system("#{venv_python} #{v1_script}") || raise("V1 training failed")
+    
+    # Train v2
+    puts
+    puts "=" * 60
+    puts "Training v2 models (vegas + no-vegas)..."
+    puts "=" * 60
+    
+    v2_script = data_dir.join('models', 'v2', 'train.py')
+    v2_cmd = [
+      venv_python.to_s,
+      v2_script.to_s,
+      "--bart-games", data_dir.join('processed', 'base_model_game_data_with_rolling.csv').to_s,
+      "--bart-season", data_dir.join('processed', 'ncaam_team_data_final.csv').to_s,
+      "--espn-team", data_dir.join('raw', 'team_stats.csv').to_s,
+      "--espn-player", data_dir.join('raw', 'player_stats.csv').to_s,
+      "--output-dir", data_dir.join('models', 'v2').to_s
+    ].join(' ')
+    
+    system(v2_cmd) || raise("V2 training failed")
+    
+    puts
+    puts "=" * 60
+    puts "Training complete!"
+    puts "=" * 60
+  end
+
+  desc "Generate predictions for upcoming games (optional: date or date range, include_completed_games=true to include final games)"
+  task :predict, [:start_date, :end_date, :include_completed_games] => :environment do |t, args|
+    start_date = args[:start_date] ? Date.parse(args[:start_date]) : nil
+    end_date = args[:end_date] ? Date.parse(args[:end_date]) : nil
+    include_completed_games = args[:include_completed_games] == 'true'
+    
+    %w[v1 v2].each do |version|
+      puts "\n=== Running #{version} predictions ==="
+      results = Ncaam::PredictService.new(
+        model_version: version,
+        start_date: start_date, 
+        end_date: end_date, 
+        include_completed_games: include_completed_games
+      ).call
+      
+      puts "Created: #{results[:created]}"
+      puts "Updated: #{results[:updated]}"
+      puts "Skipped: #{results[:skipped]}"
+      puts "Errors: #{results[:errors].count}"
+      
+      if results[:errors].any?
+        puts "\nErrors:"
+        results[:errors].each { |e| puts "  #{e}" }
+      end
+    end
+  end
+    
+  desc "Process data and train model (run after dropping new CSVs)"
+  task refresh: :environment do
+    results = Ncaam::RefreshService.new.call
+    
+    puts "Processed: #{results[:processed]}"
+    puts "Trained: #{results[:trained]}"
+  end
+
+  desc "Analyze NCAAM sweet spot picks. Options: [today_date, yesterday_date, stats_start, stats_end]"
+  task :sweet_spot, [:today_date, :yesterday_date, :stats_start, :stats_end] => :environment do |t, args|
+    today = args[:today_date] ? Date.parse(args[:today_date]) : Date.current
+    yesterday = args[:yesterday_date] ? Date.parse(args[:yesterday_date]) : today - 1.day
+    stats_start = args[:stats_start] ? Date.parse(args[:stats_start]) : Date.new(2026, 1, 2)
+    stats_end = args[:stats_end] ? Date.parse(args[:stats_end]) : yesterday
+
+    analyzer = Ncaam::SweetSpotAnalyzer.new(league_code: 'ncaam')
+
+    # Yesterday's Results
+    puts "=" * 70
+    puts "📊 YESTERDAY'S SWEET SPOT RESULTS (#{yesterday})"
+    puts "=" * 70
+
+    yesterday_picks = analyzer.sweet_spot_games(yesterday)
+    
+    if yesterday_picks.empty?
+      puts "No sweet spot games yesterday."
+    else
+      yesterday_picks.sort_by { |a| a[:game].start_time }.each do |a|
+        game = a[:game]
+        result = game.game_result
+        
+        icon = a[:gdo_correct] ? "✓" : "✗"
+        tier_label = a[:tier] == 2.0 ? "SS2.0" : "SS1.0"
+        
+        if result&.final?
+          score = "#{game.away_team.code} #{result.away_score} - #{game.home_team.code} #{result.home_score}"
+          winner_score = [result.away_score, result.home_score].max
+          loser_score = [result.away_score, result.home_score].min
+          win_margin = winner_score - loser_score
+        else
+          score = "No result"
+          win_margin = "-"
+        end
+
+        puts "#{icon} [#{tier_label}] #{a[:gdo_pick].code} (spread: #{a[:spread_size]}, margin: #{a[:gdo_margin].round(1)}) | #{score} | Win by: #{win_margin}"
+      end
+    end
+
+    # Accuracy Stats
+    puts "\n" + "=" * 70
+    puts "📈 OVERALL ACCURACY STATS (#{stats_start} to #{stats_end})"
+    puts "=" * 70
+    puts "#{'Spread ≥'.ljust(12)} #{'Correct'.rjust(8)} #{'Total'.rjust(8)} #{'Accuracy'.rjust(10)}"
+    puts "-" * 40
+
+    analyzer.accuracy_stats(start_date: stats_start, end_date: stats_end).each do |stat|
+      puts "#{stat[:threshold].to_s.ljust(12)} #{stat[:correct].to_s.rjust(8)} #{stat[:total].to_s.rjust(8)} #{(stat[:accuracy].to_s + '%').rjust(10)}"
+    end
+
+    # Today's Picks - Sweet Spot 2.0
+    puts "\n" + "=" * 70
+    puts "🏆 TODAY'S SWEET SPOT 2.0 PICKS (#{today})"
+    puts "=" * 70
+
+    today_picks = analyzer.sweet_spot_games(today)
+    ss2_picks = today_picks.select { |a| a[:tier] == 2.0 }.sort_by { |a| a[:game].start_time }
+
+    if ss2_picks.empty?
+      puts "No Sweet Spot 2.0 picks today."
+    else
+      puts "#{'Time'.ljust(8)} #{'Game'.ljust(20)} #{'Pick'.ljust(8)} #{'Spread'.rjust(8)} #{'ML Odds'.rjust(10)} #{'GDO Margin'.rjust(12)}"
+      puts "-" * 70
+      
+      ss2_picks.each do |a|
+        game = a[:game]
+        time = game.start_time.in_time_zone('America/Denver').strftime('%H:%M')
+        matchup = "#{game.away_team.code} @ #{game.home_team.code}"
+        ml_odds = a[:moneyline_favorite_odds] ? a[:moneyline_favorite_odds].to_s : "-"
+        
+        puts "#{time.ljust(8)} #{matchup.ljust(20)} #{a[:gdo_pick].code.ljust(8)} #{a[:spread_size].to_s.rjust(8)} #{ml_odds.rjust(10)} #{a[:gdo_margin].round(1).to_s.rjust(12)}"
+      end
+    end
+
+    # Today's Picks - Sweet Spot 1.0
+    puts "\n" + "=" * 70
+    puts "⚠️  TODAY'S SWEET SPOT 1.0 PICKS (#{today})"
+    puts "=" * 70
+
+    ss1_picks = today_picks.select { |a| a[:tier] == 1.0 }.sort_by { |a| a[:game].start_time }
+
+    if ss1_picks.empty?
+      puts "No Sweet Spot 1.0 picks today."
+    else
+      puts "#{'Time'.ljust(8)} #{'Game'.ljust(20)} #{'Pick'.ljust(8)} #{'Spread'.rjust(8)} #{'ML Odds'.rjust(10)} #{'GDO Margin'.rjust(12)}"
+      puts "-" * 70
+      
+      ss1_picks.each do |a|
+        game = a[:game]
+        time = game.start_time.in_time_zone('America/Denver').strftime('%H:%M')
+        matchup = "#{game.away_team.code} @ #{game.home_team.code}"
+        ml_odds = a[:moneyline_favorite_odds] ? a[:moneyline_favorite_odds].to_s : "-"
+        
+        puts "#{time.ljust(8)} #{matchup.ljust(20)} #{a[:gdo_pick].code.ljust(8)} #{a[:spread_size].to_s.rjust(8)} #{ml_odds.rjust(10)} #{a[:gdo_margin].round(1).to_s.rjust(12)}"
+      end
+    end
+
+    # Parlay Rankings
+    puts "\n" + "=" * 70
+    puts "🎰 PARLAY RANKINGS (#{today})"
+    puts "=" * 70
+
+    rankings = analyzer.parlay_rankings(today)
+
+    if rankings.empty?
+      puts "No sweet spot games for parlay."
+    else
+      puts "#{'Rank'.ljust(6)} #{'Tier'.ljust(8)} #{'Game'.ljust(20)} #{'Pick'.ljust(8)} #{'Spread'.rjust(8)} #{'GDO Margin'.rjust(12)}"
+      puts "-" * 70
+      
+      rankings.each_with_index do |a, i|
+        game = a[:game]
+        matchup = "#{game.away_team.code} @ #{game.home_team.code}"
+        tier_label = a[:tier] == 2.0 ? "SS2.0" : "SS1.0"
+        
+        puts "#{(i + 1).to_s.ljust(6)} #{tier_label.ljust(8)} #{matchup.ljust(20)} #{a[:gdo_pick].code.ljust(8)} #{a[:spread_size].to_s.rjust(8)} #{a[:gdo_margin].round(1).to_s.rjust(12)}"
+      end
+    end
+
+    puts "\n" + "=" * 70
+  end
+end
