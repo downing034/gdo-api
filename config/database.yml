@@ -21,8 +21,13 @@ default: &default
 
 
 development:
-  <<: *default
-  database: gdo_api_development
+  primary:
+    <<: *default
+    database: gdo_api_development
+  cache:
+    <<: *default
+    database: gdo_api_development_cache
+    migrations_paths: db/cache_migrate
   queue:
     <<: *default
     database: gdo_api_development

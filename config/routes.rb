@@ -1,10 +1,21 @@
 Rails.application.routes.draw do
-  # Define your application routes per the DSL in https://guides.rubyonrails.org/routing.html
+  namespace :api do
+    namespace :v1 do
+      resources :leagues, only: [:index, :show], param: :code do
+        resources :teams, only: [:index], module: :leagues
+      end
+      resources :teams, only: [:show], param: :code
+      resources :games, only: [:index, :show]
+      
+      resources :predictions, only: [] do
+        collection do
+          post :simulate
+        end
+      end
 
-  # Reveal health status on /up that returns 200 if the app boots with no exceptions, otherwise 500.
-  # Can be used by load balancers and uptime monitors to verify that the app is live.
+      get "daily_schedule", to: "daily_schedule#show"
+    end
+  end
+
   get "up" => "rails/health#show", as: :rails_health_check
-
-  # Defines the root path route ("/")
-  # root "posts#index"
 end
