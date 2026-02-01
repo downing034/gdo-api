@@ -39,3 +39,15 @@ plugin :solid_queue if ENV["SOLID_QUEUE_IN_PUMA"]
 # Specify the PID file. Defaults to tmp/pids/server.pid in development.
 # In other environments, only set the PID file if requested.
 pidfile ENV["PIDFILE"] if ENV["PIDFILE"]
+
+# Specifies the number of workers for clustered mode.
+# Workers are forked web server processes. Set this to 0 for single-process mode.
+workers ENV.fetch("WEB_CONCURRENCY", 0)
+
+# Preload app for performance in clustered mode
+preload_app! if ENV.fetch("WEB_CONCURRENCY", 0).to_i > 0
+
+# Allow worker boot to reconnect databases
+on_worker_boot do
+  ActiveRecord::Base.establish_connection if defined?(ActiveRecord)
+end
