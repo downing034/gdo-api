@@ -49,6 +49,15 @@ namespace :ncaam do
     
     system(v2_cmd) || raise("V2 training failed")
     
+    # Train v3 (enhanced v1 with rank/quad features)
+    puts
+    puts "=" * 60
+    puts "Training v3 model (enhanced v1 with rank/quad features)..."
+    puts "=" * 60
+    
+    v3_script = Rails.root.join('db', 'data', 'ncaam', 'models', 'v3', 'train.py')
+    system("#{venv_python} #{v3_script}") || raise("V3 training failed")
+    
     puts
     puts "=" * 60
     puts "Training complete!"
@@ -61,7 +70,7 @@ namespace :ncaam do
     end_date = args[:end_date] ? Date.parse(args[:end_date]) : nil
     include_completed_games = args[:include_completed_games] == 'true'
     
-    %w[v1 v2].each do |version|
+    %w[v1 v2 v3].each do |version|
       puts "\n=== Running #{version} predictions ==="
       results = Ncaam::PredictService.new(
         model_version: version,

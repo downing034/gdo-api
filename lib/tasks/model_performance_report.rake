@@ -20,7 +20,7 @@ namespace :models do
       exit 0
     end
     
-    models = ['v1', 'v2_vegas', 'v2_no_vegas', 'sl']
+    models = ['v1', 'v2_vegas', 'v2_no_vegas', 'v3', 'sl']
     espn_source = DataSource.find_by!(code: 'espn')
     
     # Model stats
@@ -173,7 +173,7 @@ namespace :models do
     end
     
     # Output
-    all_models = ['v1', 'v2_combined', 'v2_vegas', 'v2_no_vegas', 'sl']
+    all_models = ['v1', 'v2_combined', 'v2_vegas', 'v2_no_vegas', 'v3', 'sl']
     date_range = start_date == end_date ? start_date.to_s : "#{start_date} to #{end_date}"
     puts "=" * 60
     puts "Model Performance: #{league_code.upcase} #{date_range} (#{games.count} games)"

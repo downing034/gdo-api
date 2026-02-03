@@ -1,4 +1,3 @@
-# app/services/ncaam/predict_service.rb
 module Ncaam
   class PredictService
     VENV_PYTHON = Rails.root.join('db', 'data', 'ncaam', 'venv', 'bin', 'python').to_s
@@ -11,7 +10,11 @@ module Ncaam
         data_source_code: 'gdo'
       },
       'v2' => {
-        script: 'predict.py',  # Same interface as v1
+        script: 'predict.py',
+        data_source_code: 'gdo'
+      },
+      'v3' => {
+        script: 'predict.py',
         data_source_code: 'gdo'
       }
     }.freeze

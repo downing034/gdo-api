@@ -38,7 +38,7 @@ namespace :games do
       home_team = game.home_team.code
       
       sl_pred = game.game_predictions.find { |p| p.model_version == 'sl' }
-      gdo_pred = game.game_predictions.find { |p| p.model_version.start_with?('v2') }
+      gdo_pred = game.game_predictions.find { |p| p.model_version.start_with?('v1') }
       
       sl_away = sl_pred&.away_predicted_score&.to_i
       sl_home = sl_pred&.home_predicted_score&.to_i

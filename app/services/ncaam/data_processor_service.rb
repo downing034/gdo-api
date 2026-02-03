@@ -40,6 +40,7 @@ module Ncaam
       
       @team_stats = nil
       @team_table = nil
+      @rank_lookup = {}  # Team code -> Barttorvik rank
     end
 
     def call
@@ -52,6 +53,10 @@ module Ncaam
 
       @team_table = load_team_table
       puts "  Loaded #{@team_table.length} teams from team table"
+
+      # Build rank lookup from team table
+      build_rank_lookup
+      puts "  Built rank lookup for #{@rank_lookup.length} teams"
 
       puts
       puts '=' * 60
@@ -70,10 +75,19 @@ module Ncaam
 
       puts
       puts '=' * 60
+      puts 'Calculating quad records...'
+      puts '=' * 60
+
+      # Calculate quad records for each team based on game history
+      quad_records = calculate_quad_records(all_games)
+      puts "  Calculated quad records for #{quad_records.length} teams"
+
+      puts
+      puts '=' * 60
       puts 'Creating team summary...'
       puts '=' * 60
 
-      team_summary = create_team_summary
+      team_summary = create_team_summary(quad_records)
       puts "  Created summary for #{team_summary.length} teams"
 
       puts
@@ -93,6 +107,132 @@ module Ncaam
     end
 
     private
+
+    # =========================================================================
+    # Rank Lookup
+    # =========================================================================
+
+    def build_rank_lookup
+      @team_table.each do |team|
+        code = team['Team_Code']
+        rank = to_i_safe(team['Team ID'])
+        @rank_lookup[code] = rank if code && rank
+      end
+    end
+
+    # =========================================================================
+    # Quad Calculations
+    # =========================================================================
+
+    def get_quad(opp_rank, location)
+      # Determine quad level based on opponent rank and game location
+      # location: 'home', 'away', or 'neutral'
+      return nil unless opp_rank
+
+      if location == 'home'
+        if opp_rank <= 30 then 1
+        elsif opp_rank <= 75 then 2
+        elsif opp_rank <= 160 then 3
+        else 4
+        end
+      elsif location == 'neutral'
+        if opp_rank <= 50 then 1
+        elsif opp_rank <= 100 then 2
+        elsif opp_rank <= 200 then 3
+        else 4
+        end
+      else # away
+        if opp_rank <= 75 then 1
+        elsif opp_rank <= 135 then 2
+        elsif opp_rank <= 240 then 3
+        else 4
+        end
+      end
+    end
+
+    def calculate_quad_records(games_data)
+      # Initialize records for all teams
+      quad_records = Hash.new do |h, k|
+        h[k] = {
+          q1_wins: 0, q1_losses: 0,
+          q2_wins: 0, q2_losses: 0,
+          q3_wins: 0, q3_losses: 0,
+          q4_wins: 0, q4_losses: 0
+        }
+      end
+
+      games_data.each do |game|
+        away_team = game[:away_team]
+        home_team = game[:home_team]
+        away_score = game[:away_score]
+        home_score = game[:home_score]
+        venue = game[:venue]
+
+        # Skip if missing data
+        next unless away_team && home_team && away_score && home_score
+
+        away_rank = @rank_lookup[away_team]
+        home_rank = @rank_lookup[home_team]
+
+        # Determine locations
+        if venue == 'N'
+          away_location = 'neutral'
+          home_location = 'neutral'
+        else
+          away_location = 'away'
+          home_location = 'home'
+        end
+
+        # Away team's perspective
+        away_quad = get_quad(home_rank, away_location)
+        if away_quad
+          if away_score > home_score
+            quad_records[away_team][:"q#{away_quad}_wins"] += 1
+          else
+            quad_records[away_team][:"q#{away_quad}_losses"] += 1
+          end
+        end
+
+        # Home team's perspective
+        home_quad = get_quad(away_rank, home_location)
+        if home_quad
+          if home_score > away_score
+            quad_records[home_team][:"q#{home_quad}_wins"] += 1
+          else
+            quad_records[home_team][:"q#{home_quad}_losses"] += 1
+          end
+        end
+      end
+
+      # Calculate derived quad metrics for each team
+      quad_records.each do |team, record|
+        # Quality wins (Q1 + Q2)
+        record[:q1_q2_wins] = record[:q1_wins] + record[:q2_wins]
+        record[:q1_q2_games] = record[:q1_wins] + record[:q1_losses] + record[:q2_wins] + record[:q2_losses]
+        record[:q1_q2_win_pct] = record[:q1_q2_games] > 0 ? 
+          (record[:q1_q2_wins].to_f / record[:q1_q2_games] * 100).round(1) : 0
+
+        # Bad losses (Q3 + Q4)
+        record[:q3_q4_losses] = record[:q3_losses] + record[:q4_losses]
+
+        # Quality score: Q1 wins - Q4 losses
+        record[:quality_score] = record[:q1_wins] - record[:q4_losses]
+
+        # Weighted quality: emphasizes Q1 wins and penalizes Q4 losses
+        # Q1 wins = +3, Q2 wins = +2, Q3 wins = +1, Q4 wins = 0
+        # Q3 losses = -1, Q4 losses = -3
+        record[:weighted_quality] = (
+          3 * record[:q1_wins] +
+          2 * record[:q2_wins] +
+          1 * record[:q3_wins] +
+          0 * record[:q4_wins] -
+          1 * record[:q3_losses] -
+          3 * record[:q4_losses]
+        )
+      end
+
+      quad_records
+    end
 
     # =========================================================================
     # Multi-Season Processing
@@ -249,18 +389,6 @@ module Ncaam
       
       # Remove duplicate header rows
       rows = rows.reject { |row| header_row?(row) }
-      
-      expected_cols = %w[
-        Rk Team Conf
-        AdjEff_Off AdjEff_Def
-        eFG_Off eFG_Def
-        TO_Off TO_Def
-        OReb_Off OReb_Def
-        FTRate_Off FTRate_Def
-        FT_Off FT_Def
-        2P_Off 2P_Def
-        3P_Off 3P_Def
-      ]
       
       stat_mappings = [
         ['AdjEff_Off', 'Adj. Off. Eff', 'Adj. Off. Eff Rank'],
@@ -514,21 +642,17 @@ module Ncaam
           season: game[:season],
           team: game[:away_team],
           game_id: game[:id],
-          # Efficiency metrics
           AdjO: game[:away_AdjO],
           AdjD: game[:away_AdjD],
           T: game[:away_T],
-          # Offensive Four Factors (from game)
           eFG_off: game[:"away_OeFG%"],
           TOV_off: game[:"away_OTO%"],
           OReb: game[:"away_OReb%"],
           FTR_off: game[:away_OFTR],
-          # Defensive Four Factors (from game)
           eFG_def: game[:"away_DeFG%"],
           TOV_def: game[:"away_DTO%"],
           DReb: game[:"away_DReb%"],
           FTR_def: game[:away_DFTR],
-          # Game score
           g_score: game[:away_g_score]
         }
         
@@ -538,97 +662,84 @@ module Ncaam
           season: game[:season],
           team: game[:home_team],
           game_id: game[:id],
-          # Efficiency metrics
           AdjO: game[:home_AdjO],
           AdjD: game[:home_AdjD],
           T: game[:home_T],
-          # Offensive Four Factors (from game)
           eFG_off: game[:"home_OeFG%"],
           TOV_off: game[:"home_OTO%"],
           OReb: game[:"home_OReb%"],
           FTR_off: game[:home_OFTR],
-          # Defensive Four Factors (from game)
           eFG_def: game[:"home_DeFG%"],
           TOV_def: game[:"home_DTO%"],
           DReb: game[:"home_DReb%"],
           FTR_def: game[:home_DFTR],
-          # Game score
           g_score: game[:home_g_score]
         }
       end
       
-      # Sort by team, then season, then date
-      # This ensures rolling stats are calculated correctly within each season
-      team_games.sort_by! { |g| [g[:team].to_s, g[:season].to_s, g[:date].to_s] }
+      # Sort by team, then by date
+      team_games.sort_by! { |g| [g[:team] || '', g[:date] || '0000-00-00'] }
       
-      # Group by team AND season (rolling resets each season)
-      team_season_games = team_games.group_by { |g| [g[:team], g[:season]] }
+      # Group by team
+      by_team = team_games.group_by { |g| g[:team] }
       
-      # All stats we want to roll
-      stats_to_roll = [
-        :AdjO, :AdjD, :T,
-        :eFG_off, :TOV_off, :OReb, :FTR_off,
-        :eFG_def, :TOV_def, :DReb, :FTR_def,
-        :g_score
-      ]
-      
-      # Calculate rolling stats
+      # Calculate rolling averages
       rolling_stats = {}
       
-      team_season_games.each do |(team, season), team_data|
-        team_data.sort_by! { |g| g[:date].to_s }
+      by_team.each do |team, games|
+        next unless team
         
-        team_data.each_with_index do |game, idx|
+        prev_date = nil
+        
+        games.each_with_index do |game, idx|
           game_id = game[:game_id]
           rolling_stats[game_id] ||= {}
           
-          # Get previous games within this season only (not including current)
-          prev_games = team_data[0...idx]
-          
-          # Calculate days since last game
-          if prev_games.empty?
-            days_rest = 7  # Default for first game of season
+          # Days rest calculation
+          if prev_date && game[:date]
+            begin
+              current = Date.parse(game[:date])
+              previous = Date.parse(prev_date)
+              days_rest = (current - previous).to_i
+            rescue
+              days_rest = 7
+            end
           else
-            last_game_date = Date.parse(prev_games.last[:date].to_s)
-            current_game_date = Date.parse(game[:date].to_s)
-            days_rest = (current_game_date - last_game_date).to_i
+            days_rest = 7
           end
+          prev_date = game[:date]
           
-          # Calculate rolling averages for each stat
+          # Get previous N games (excluding current)
+          prev_5 = games[[0, idx - 5].max...idx]
+          prev_10 = games[[0, idx - 10].max...idx]
+          
+          # Calculate averages
+          stats_to_roll = [:AdjO, :AdjD, :T, :eFG_off, :TOV_off, :OReb, :FTR_off, 
+                          :eFG_def, :TOV_def, :DReb, :FTR_def, :g_score]
+          
           rolling_5 = {}
           rolling_10 = {}
           
           stats_to_roll.each do |stat|
-            if prev_games.empty?
-              # First game of season - use current game stats as fallback
-              rolling_5[stat] = game[stat]
-              rolling_10[stat] = game[stat]
-            else
-              # Rolling 5
-              last_5 = prev_games.last([5, prev_games.length].min)
-              values_5 = last_5.map { |g| g[stat] }.compact
-              rolling_5[stat] = values_5.empty? ? nil : (values_5.sum.to_f / values_5.length)
-              
-              # Rolling 10
-              last_10 = prev_games.last([10, prev_games.length].min)
-              values_10 = last_10.map { |g| g[stat] }.compact
-              rolling_10[stat] = values_10.empty? ? nil : (values_10.sum.to_f / values_10.length)
-            end
+            vals_5 = prev_5.map { |g| g[stat] }.compact
+            vals_10 = prev_10.map { |g| g[stat] }.compact
+            
+            rolling_5[stat] = vals_5.any? ? vals_5.sum / vals_5.length : nil
+            rolling_10[stat] = vals_10.any? ? vals_10.sum / vals_10.length : nil
           end
           
-          # Determine if this team is away or home and assign stats
+          # Find the original game to determine away/home prefix
           original_game = games_data.find { |g| g[:id] == game_id }
+          next unless original_game
+          
           prefix = original_game[:away_team] == team ? 'away' : 'home'
           
-          # Efficiency metrics
           rolling_stats[game_id][:"#{prefix}_AdjO_rolling_5"] = rolling_5[:AdjO]&.round(2)
           rolling_stats[game_id][:"#{prefix}_AdjO_rolling_10"] = rolling_10[:AdjO]&.round(2)
           rolling_stats[game_id][:"#{prefix}_AdjD_rolling_5"] = rolling_5[:AdjD]&.round(2)
           rolling_stats[game_id][:"#{prefix}_AdjD_rolling_10"] = rolling_10[:AdjD]&.round(2)
           rolling_stats[game_id][:"#{prefix}_T_rolling_5"] = rolling_5[:T]&.round(2)
           rolling_stats[game_id][:"#{prefix}_T_rolling_10"] = rolling_10[:T]&.round(2)
-          
-          # Offensive Four Factors rolling
           rolling_stats[game_id][:"#{prefix}_eFG_off_rolling_5"] = rolling_5[:eFG_off]&.round(2)
           rolling_stats[game_id][:"#{prefix}_eFG_off_rolling_10"] = rolling_10[:eFG_off]&.round(2)
           rolling_stats[game_id][:"#{prefix}_TOV_off_rolling_5"] = rolling_5[:TOV_off]&.round(2)
@@ -637,8 +748,6 @@ module Ncaam
           rolling_stats[game_id][:"#{prefix}_OReb_rolling_10"] = rolling_10[:OReb]&.round(2)
           rolling_stats[game_id][:"#{prefix}_FTR_off_rolling_5"] = rolling_5[:FTR_off]&.round(2)
           rolling_stats[game_id][:"#{prefix}_FTR_off_rolling_10"] = rolling_10[:FTR_off]&.round(2)
-          
-          # Defensive Four Factors rolling
           rolling_stats[game_id][:"#{prefix}_eFG_def_rolling_5"] = rolling_5[:eFG_def]&.round(2)
           rolling_stats[game_id][:"#{prefix}_eFG_def_rolling_10"] = rolling_10[:eFG_def]&.round(2)
           rolling_stats[game_id][:"#{prefix}_TOV_def_rolling_5"] = rolling_5[:TOV_def]&.round(2)
@@ -647,12 +756,8 @@ module Ncaam
           rolling_stats[game_id][:"#{prefix}_DReb_rolling_10"] = rolling_10[:DReb]&.round(2)
           rolling_stats[game_id][:"#{prefix}_FTR_def_rolling_5"] = rolling_5[:FTR_def]&.round(2)
           rolling_stats[game_id][:"#{prefix}_FTR_def_rolling_10"] = rolling_10[:FTR_def]&.round(2)
-          
-          # Game score rolling
           rolling_stats[game_id][:"#{prefix}_g_score_rolling_5"] = rolling_5[:g_score]&.round(2)
           rolling_stats[game_id][:"#{prefix}_g_score_rolling_10"] = rolling_10[:g_score]&.round(2)
-          
-          # Days rest
           rolling_stats[game_id][:"#{prefix}_days_rest"] = days_rest
         end
       end
@@ -669,7 +774,6 @@ module Ncaam
     def add_sos_to_games(games_data)
       puts 'Adding SOS to games...'
       
-      # Create SOS lookup by team code
       sos_lookup = {}
       @team_table.each do |team|
         code = team['Team_Code']
@@ -684,26 +788,43 @@ module Ncaam
       games_data
     end
 
-    def create_team_summary
+    def create_team_summary(quad_records = {})
       puts 'Creating team summary...'
       
-      # Build lookup from team stats (has ranks)
       stats_by_team = {}
       @team_stats.each do |team|
         stats_by_team[team['Team']] = team
       end
       
-      # Merge with team table
       merged = @team_table.map do |team|
         team_name = team['Team']
         stats = stats_by_team[team_name] || {}
         
         result = team.merge(stats) do |key, old_val, new_val|
-          # Prefer team_table values, but take ranks from stats
           key.include?('Rank') ? new_val : old_val
         end
         
         result['Conference'] ||= stats['Conference']
+        
+        # Add quad records if available
+        team_code = result['Team_Code']
+        if team_code && quad_records[team_code]
+          qr = quad_records[team_code]
+          result['Q1 Wins'] = qr[:q1_wins]
+          result['Q1 Losses'] = qr[:q1_losses]
+          result['Q2 Wins'] = qr[:q2_wins]
+          result['Q2 Losses'] = qr[:q2_losses]
+          result['Q3 Wins'] = qr[:q3_wins]
+          result['Q3 Losses'] = qr[:q3_losses]
+          result['Q4 Wins'] = qr[:q4_wins]
+          result['Q4 Losses'] = qr[:q4_losses]
+          result['Q1-Q2 Wins'] = qr[:q1_q2_wins]
+          result['Q1-Q2 Win Pct'] = qr[:q1_q2_win_pct]
+          result['Q3-Q4 Losses'] = qr[:q3_q4_losses]
+          result['Quality Score'] = qr[:quality_score]
+          result['Weighted Quality'] = qr[:weighted_quality]
+        end
+        
         result
       end
       
@@ -766,7 +887,6 @@ module Ncaam
         away_sos home_sos home_advantage
       ]
       
-      # Convert symbol keys to strings for header
       headers = column_order.map(&:to_s)
       
       CSV.open(output_path, 'w', quote_char: '"', force_quotes: true) do |csv|
@@ -815,10 +935,16 @@ module Ncaam
         'Elite SOS',
         'Block% Def Rank', 'Block% Off Rank',
         'Assist% Off Rank', 'Assist% Def Rank',
-        '3P Rate Off Rank', '3P Rate Def Rank'
+        '3P Rate Off Rank', '3P Rate Def Rank',
+        # Quad records
+        'Q1 Wins', 'Q1 Losses',
+        'Q2 Wins', 'Q2 Losses',
+        'Q3 Wins', 'Q3 Losses',
+        'Q4 Wins', 'Q4 Losses',
+        'Q1-Q2 Wins', 'Q1-Q2 Win Pct',
+        'Q3-Q4 Losses', 'Quality Score', 'Weighted Quality'
       ]
       
-      # Filter to only columns that exist
       available_columns = output_columns.select do |col|
         team_data.any? { |t| t.key?(col) }
       end
@@ -829,8 +955,7 @@ module Ncaam
         team_data.each do |team|
           row = available_columns.map do |col|
             val = team[col]
-            # Format rank columns as integers
-            if col.include?('Rank') || col == 'Team ID'
+            if col.include?('Rank') || col == 'Team ID' || col.include?('Wins') || col.include?('Losses') || col == 'Quality Score' || col == 'Weighted Quality'
               val.to_i if val
             else
               val
