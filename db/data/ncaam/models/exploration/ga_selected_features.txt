@@ -1,0 +1,39 @@
+# GA Selected Features
+# Test MAE: 9.205
+# Test Acc: 71.9%
+
+home_eFG_def_10
+away_TOV_off_5
+away_TOV_def_5
+away_FTR_def_5
+away_tempo_10
+away_TOV_off_10
+away_3p_def
+away_2p_def
+is_conference
+away_eff_margin_10
+eff_margin_diff_10
+TOV_def_diff_5
+TOV_def_diff_10
+OReb_diff_10
+FTR_off_diff_10
+barthag_rank_diff
+home_court
+off_rank_diff_abs
+sos_diff_abs
+barthag_diff_sq
+eff_margin_diff_5_x_home_court
+eff_margin_diff_10_x_rest_diff
+barthag_rank_diff_x_home_court
+barthag_rank_diff_x_rest_diff
+def_rank_diff_x_home_court
+def_rank_diff_x_is_neutral
+TOV_off_diff_5_x_home_court
+TOV_off_diff_5_x_is_neutral
+talent_diff_x_is_conference
+barthag_diff_x_home_court
+barthag_diff_x_rest_diff
+barthag_rank_diff_x_def_rank_diff
+sos_diff_x_TOV_off_diff_5
+sos_diff_x_talent_diff
+composite_four_factors

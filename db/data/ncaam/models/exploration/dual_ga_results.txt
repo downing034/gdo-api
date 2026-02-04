@@ -1,0 +1,51 @@
+# Dual GA Results
+
+# Home Score MAE: 8.36
+home_features = ['quality_matchup', 'quality_x_home', 'quality_matchup_sqrt', 'off_eff_x_tempo', 'avg_tempo_10', 'avg_tempo_5', 'home_AdjO_10', 'home_off_rank', 'home_2p_off', 'home_tempo_10', 'home_eFG_off_10', 'home_weighted_quality', 'quality_matchup_sq', 'avg_tempo_season', 'home_court', 'away_2p_def', 'home_talent', 'home_tempo', 'away_adj_def', 'away_AdjD_5', 'is_neutral', 'home_3p_off', 'away_3p_def', 'home_OReb_10', 'home_oreb', 'home_OReb_5', 'away_DReb_5', 'away_dreb', 'matchup_x_home', 'off_vs_def_eff_10', 'off_vs_def_eff_5_sqrt', 'home_3p_rate_off', 'home_FTR_off_10', 'away_FTR_def_10', 'matchup_x_conf', 'home_days_rest']
+
+# Away Score MAE: 8.10
+away_features = ['quality_matchup_sqrt', 'away_AdjO_10', 'avg_tempo_10', 'avg_tempo_5', 'away_g_score_10', 'away_efg_off', 'away_2p_off', 'away_eFG_off_10', 'away_weighted_quality', 'away_tempo_5', 'away_TOV_off_10', 'away_eFG_off_5', 'home_court', 'home_AdjD_10', 'home_eFG_def_10', 'home_2p_def', 'home_def_rank', 'away_OReb_10', 'away_3p_rate_off', 'away_OReb_5', 'home_tov_def', 'home_DReb_10', 'off_vs_def_eff_10', 'away_FTR_off_10', 'matchup_x_tempo', 'off_vs_def_eff_10_sq', 'is_conference', 'eFG_matchup_10', 'matchup_x_home', 'eFG_matchup_5', 'FTR_matchup_10', 'FTR_matchup_5', 'home_FTR_def_10', 'home_days_rest']
+
+# Home HOF Frequency:
+#   avg_tempo_10: 83
+#   is_neutral: 78
+#   avg_tempo_season: 76
+#   home_court: 68
+#   quality_x_home: 66
+#   quality_matchup_sqrt: 66
+#   away_AdjD_10: 66
+#   quality_matchup: 61
+#   avg_tempo_5: 61
+#   home_off_rank: 59
+#   away_adj_def: 57
+#   home_barthag: 57
+#   home_adj_off: 56
+#   away_def_rank: 56
+#   home_2p_off: 54
+#   home_AdjO_10: 53
+#   home_tov_off: 53
+#   away_FTR_def_10: 52
+#   home_TOV_off_5: 52
+#   away_sos: 52
+
+# Away HOF Frequency:
+#   avg_tempo_10: 83
+#   away_AdjO_10: 64
+#   quality_x_home: 64
+#   avg_tempo_season: 63
+#   avg_tempo_5: 61
+#   home_block_def: 61
+#   off_eff_x_tempo: 60
+#   home_adj_def: 60
+#   quality_matchup: 58
+#   home_court: 55
+#   away_tempo_10: 53
+#   home_efg_def: 52
+#   reb_matchup_10: 52
+#   quality_matchup_sqrt: 51
+#   home_AdjD_10: 51
+#   home_def_rank: 51
+#   home_DReb_10: 51
+#   home_eFG_def_5: 51
+#   home_TOV_def_5: 51
+#   away_g_score_10: 50
