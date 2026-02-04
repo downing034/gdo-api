@@ -20,11 +20,18 @@ namespace :models do
       exit 0
     end
     
-    models = ['v1', 'v2_vegas', 'v2_no_vegas', 'v3', 'sl']
+    # Models that predict scores (can evaluate ML, ATS, O/U, MAE)
+    score_models = ['v1', 'v2_vegas', 'v2_no_vegas', 'v3', 'sl']
+    
+    # Models that predict winner only (can only evaluate ML)
+    winner_only_models = ['v4']
+    
+    all_prediction_models = score_models + winner_only_models
+    
     espn_source = DataSource.find_by!(code: 'espn')
     
     # Model stats
-    stats = models.each_with_object({}) do |model, h|
+    stats = all_prediction_models.each_with_object({}) do |model, h|
       h[model] = {
         games: 0,
         ml_correct: 0,
@@ -36,7 +43,8 @@ namespace :models do
         total_error_away: 0,
         total_error_home: 0,
         games_with_odds: 0,
-        games_with_ou: 0
+        games_with_ou: 0,
+        winner_only: winner_only_models.include?(model)
       }
     end
     
@@ -52,7 +60,8 @@ namespace :models do
       total_error_away: 0,
       total_error_home: 0,
       games_with_odds: 0,
-      games_with_ou: 0
+      games_with_ou: 0,
+      winner_only: false
     }
     
     # Oddsmaker stats
@@ -104,7 +113,7 @@ namespace :models do
       v2_combined_pred = game.game_predictions.find { |p| p.model_version == 'v2_vegas' } ||
                          game.game_predictions.find { |p| p.model_version == 'v2_no_vegas' }
       
-      (models + ['v2_combined']).each do |model|
+      (all_prediction_models + ['v2_combined']).each do |model|
         pred = if model == 'v2_combined'
           v2_combined_pred
         else
@@ -115,15 +124,26 @@ namespace :models do
         s = stats[model]
         s[:games] += 1
         
-        pred_home = pred.home_predicted_score.to_f
-        pred_away = pred.away_predicted_score.to_f
-        pred_winner = pred_home > pred_away ? game.home_team : game.away_team
-        pred_total = pred_home + pred_away
+        is_winner_only = s[:winner_only]
         
-        # Moneyline
+        # For winner-only models, use predicted_winner directly
+        # For score models, derive winner from scores
+        if is_winner_only
+          pred_winner = pred.predicted_winner
+        else
+          pred_home = pred.home_predicted_score.to_f
+          pred_away = pred.away_predicted_score.to_f
+          pred_winner = pred_home > pred_away ? game.home_team : game.away_team
+          pred_total = pred_home + pred_away
+        end
+        
+        # Moneyline (all models)
         s[:ml_correct] += 1 if pred_winner == actual_winner
         
-        # MAE
+        # Skip ATS, O/U, MAE for winner-only models
+        next if is_winner_only
+        
+        # MAE (score models only)
         s[:total_error_away] += (pred_away - actual_away).abs
         s[:total_error_home] += (pred_home - actual_home).abs
         
@@ -131,7 +151,7 @@ namespace :models do
         
         s[:games_with_odds] += 1
         
-        # ATS
+        # ATS (score models only)
         if odds.spread_favorite_team && odds.spread_value
           spread_value = odds.spread_value.to_f.abs
           favorite = odds.spread_favorite_team
@@ -154,7 +174,7 @@ namespace :models do
           end
         end
         
-        # Over/Under
+        # Over/Under (score models only)
         if odds.total_line
           s[:games_with_ou] += 1
           total_line = odds.total_line.to_f
@@ -173,28 +193,28 @@ namespace :models do
     end
     
     # Output
-    all_models = ['v1', 'v2_combined', 'v2_vegas', 'v2_no_vegas', 'v3', 'sl']
+    all_models_display = ['v1', 'v2_combined', 'v2_no_vegas', 'v3', 'v4', 'sl']
     date_range = start_date == end_date ? start_date.to_s : "#{start_date} to #{end_date}"
     puts "=" * 60
     puts "Model Performance: #{league_code.upcase} #{date_range} (#{games.count} games)"
     puts "=" * 60
     
-    # Moneyline
+    # Moneyline (all models)
     puts "\nMONEYLINE"
     puts "-" * 40
     if odds_stats[:ml_games] > 0
       ml_pct = (odds_stats[:ml_correct].to_f / odds_stats[:ml_games] * 100).round(1)
       puts "Oddsmaker:      #{odds_stats[:ml_correct]}/#{odds_stats[:ml_games]} (#{ml_pct}%)"
     end
-    all_models.each do |model|
+    all_models_display.each do |model|
       s = stats[model]
-      next if s[:games] == 0
+      next if s.nil? || s[:games] == 0
       ml_pct = (s[:ml_correct].to_f / s[:games] * 100).round(1)
       label = model.upcase.gsub('_', ' ')
       puts "#{label.ljust(14)}#{s[:ml_correct]}/#{s[:games]} (#{ml_pct}%)"
     end
     
-    # ATS
+    # ATS (score models only)
     puts "\nATS"
     puts "-" * 40
     if odds_stats[:ats_games] > 0
@@ -202,21 +222,21 @@ namespace :models do
       ats_pct = ats_decided > 0 ? (odds_stats[:ats_correct].to_f / ats_decided * 100).round(1) : 0
       puts "Oddsmaker:      #{odds_stats[:ats_correct]}/#{ats_decided} (#{ats_pct}%) [#{odds_stats[:ats_push]} push]"
     end
-    all_models.each do |model|
+    all_models_display.each do |model|
       s = stats[model]
-      next if s[:games_with_odds] == 0
+      next if s.nil? || s[:games_with_odds] == 0 || s[:winner_only]
       ats_decided = s[:games_with_odds] - s[:ats_push]
       ats_pct = ats_decided > 0 ? (s[:ats_correct].to_f / ats_decided * 100).round(1) : 0
       label = model.upcase.gsub('_', ' ')
       puts "#{label.ljust(14)}#{s[:ats_correct]}/#{ats_decided} (#{ats_pct}%) [#{s[:ats_push]} push]"
     end
     
-    # Over/Under
+    # Over/Under (score models only)
     puts "\nOVER/UNDER"
     puts "-" * 40
-    all_models.each do |model|
+    all_models_display.each do |model|
       s = stats[model]
-      next if s[:games_with_ou] == 0
+      next if s.nil? || s[:games_with_ou] == 0 || s[:winner_only]
       ou_correct = s[:ou_over_correct] + s[:ou_under_correct]
       ou_decided = s[:games_with_ou] - s[:ou_push]
       ou_pct = ou_decided > 0 ? (ou_correct.to_f / ou_decided * 100).round(1) : 0
@@ -224,12 +244,12 @@ namespace :models do
       puts "#{label.ljust(14)}#{ou_correct}/#{ou_decided} (#{ou_pct}%) [#{s[:ou_push]} push]"
     end
     
-    # MAE
+    # MAE (score models only)
     puts "\nMAE"
     puts "-" * 40
-    all_models.each do |model|
+    all_models_display.each do |model|
       s = stats[model]
-      next if s[:games] == 0
+      next if s.nil? || s[:games] == 0 || s[:winner_only]
       mae_away = (s[:total_error_away] / s[:games]).round(1)
       mae_home = (s[:total_error_home] / s[:games]).round(1)
       mae_avg = ((mae_away + mae_home) / 2).round(1)

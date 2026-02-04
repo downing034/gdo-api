@@ -49,14 +49,23 @@ namespace :ncaam do
     
     system(v2_cmd) || raise("V2 training failed")
     
-    # Train v3 (enhanced v1 with rank/quad features)
+    # Train v3 (score prediction model)
     puts
     puts "=" * 60
-    puts "Training v3 model (enhanced v1 with rank/quad features)..."
+    puts "Training v3 model (dual score prediction)..."
     puts "=" * 60
     
     v3_script = Rails.root.join('db', 'data', 'ncaam', 'models', 'v3', 'train.py')
     system("#{venv_python} #{v3_script}") || raise("V3 training failed")
+    
+    # Train v4 (winner-only model)
+    puts
+    puts "=" * 60
+    puts "Training v4 model (winner-only, moneyline optimized)..."
+    puts "=" * 60
+    
+    v4_script = Rails.root.join('db', 'data', 'ncaam', 'models', 'v4', 'train.py')
+    system("#{venv_python} #{v4_script}") || raise("V4 training failed")
     
     puts
     puts "=" * 60
@@ -70,7 +79,7 @@ namespace :ncaam do
     end_date = args[:end_date] ? Date.parse(args[:end_date]) : nil
     include_completed_games = args[:include_completed_games] == 'true'
     
-    %w[v1 v2 v3].each do |version|
+    %w[v1 v2 v3 v4].each do |version|
       puts "\n=== Running #{version} predictions ==="
       results = Ncaam::PredictService.new(
         model_version: version,
@@ -108,117 +117,225 @@ namespace :ncaam do
 
     analyzer = Ncaam::SweetSpotAnalyzer.new(league_code: 'ncaam')
 
-    # Yesterday's Results
-    puts "=" * 70
-    puts "📊 YESTERDAY'S SWEET SPOT RESULTS (#{yesterday})"
-    puts "=" * 70
-
-    yesterday_picks = analyzer.sweet_spot_games(yesterday)
+    # Gather all data upfront
+    yesterday_points = analyzer.sweet_spot_games(yesterday)
+    yesterday_ml = analyzer.v4_sweet_spot_games(yesterday)
+    yesterday_dogs = analyzer.v4_underdog_picks(yesterday)
     
-    if yesterday_picks.empty?
-      puts "No sweet spot games yesterday."
+    today_points = analyzer.sweet_spot_games(today)
+    today_ml = analyzer.v4_sweet_spot_games(today)
+    today_dogs = analyzer.v4_underdog_picks(today)
+    today_combined = analyzer.combined_sweet_spot_games(today)
+
+    points_stats = analyzer.accuracy_stats(start_date: stats_start, end_date: stats_end)
+    ml_stats = analyzer.v4_accuracy_stats(start_date: stats_start, end_date: stats_end)
+
+    # =========================================================================
+    # YESTERDAY'S RESULTS
+    # =========================================================================
+    puts "=" * 80
+    puts "📊 YESTERDAY'S RESULTS (#{yesterday})"
+    puts "=" * 80
+
+    # Points Model Results
+    puts "\n🏀 POINTS MODEL (V3+SL agree, pick fav, margin≥8)"
+    puts "-" * 80
+    if yesterday_points.empty?
+      puts "   No games"
     else
-      yesterday_picks.sort_by { |a| a[:game].start_time }.each do |a|
+      yesterday_points.sort_by { |a| a[:tier] == 2.0 ? 0 : 1 }.each do |a|
         game = a[:game]
         result = game.game_result
-        
         icon = a[:gdo_correct] ? "✓" : "✗"
-        tier_label = a[:tier] == 2.0 ? "SS2.0" : "SS1.0"
-        
-        if result&.final?
-          score = "#{game.away_team.code} #{result.away_score} - #{game.home_team.code} #{result.home_score}"
-          winner_score = [result.away_score, result.home_score].max
-          loser_score = [result.away_score, result.home_score].min
-          win_margin = winner_score - loser_score
-        else
-          score = "No result"
-          win_margin = "-"
-        end
-
-        puts "#{icon} [#{tier_label}] #{a[:gdo_pick].code} (spread: #{a[:spread_size]}, margin: #{a[:gdo_margin].round(1)}) | #{score} | Win by: #{win_margin}"
+        tier = a[:tier] == 2.0 ? "2.0" : "1.0"
+        score = result&.final? ? "#{result.away_score}-#{result.home_score}" : "pending"
+        margin = result&.final? ? (result.away_score - result.home_score).abs : 0
+        puts "   #{icon} [#{tier}] #{a[:gdo_pick].code.ljust(5)} spread:#{a[:spread_size].to_s.rjust(5)}  margin:#{a[:gdo_margin].round(0).to_s.rjust(3)}  |  #{score} (#{margin})"
       end
     end
 
-    # Accuracy Stats
-    puts "\n" + "=" * 70
-    puts "📈 OVERALL ACCURACY STATS (#{stats_start} to #{stats_end})"
-    puts "=" * 70
-    puts "#{'Spread ≥'.ljust(12)} #{'Correct'.rjust(8)} #{'Total'.rjust(8)} #{'Accuracy'.rjust(10)}"
-    puts "-" * 40
-
-    analyzer.accuracy_stats(start_date: stats_start, end_date: stats_end).each do |stat|
-      puts "#{stat[:threshold].to_s.ljust(12)} #{stat[:correct].to_s.rjust(8)} #{stat[:total].to_s.rjust(8)} #{(stat[:accuracy].to_s + '%').rjust(10)}"
+    # Moneyline Model Results
+    puts "\n💰 MONEYLINE MODEL (V4 conf≥70/80%, spread≥13, pick fav)"
+    puts "-" * 80
+    if yesterday_ml.empty?
+      puts "   No games"
+    else
+      yesterday_ml.sort_by { |a| a[:v4_tier] == 2.0 ? 0 : 1 }.each do |a|
+        game = a[:game]
+        result = game.game_result
+        icon = a[:v4_correct] ? "✓" : "✗"
+        tier = a[:v4_tier] == 2.0 ? "2.0" : "1.0"
+        score = result&.final? ? "#{result.away_score}-#{result.home_score}" : "pending"
+        puts "   #{icon} [#{tier}] #{a[:v4_pick]&.code.to_s.ljust(5)} spread:#{a[:spread_size].to_s.rjust(5)}  conf:#{a[:v4_confidence]&.round(0).to_s.rjust(3)}%  |  #{score}"
+      end
     end
 
-    # Today's Picks - Sweet Spot 2.0
-    puts "\n" + "=" * 70
-    puts "🏆 TODAY'S SWEET SPOT 2.0 PICKS (#{today})"
-    puts "=" * 70
-
-    today_picks = analyzer.sweet_spot_games(today)
-    ss2_picks = today_picks.select { |a| a[:tier] == 2.0 }.sort_by { |a| a[:game].start_time }
-
-    if ss2_picks.empty?
-      puts "No Sweet Spot 2.0 picks today."
+    # Underdog Results
+    puts "\n🐕 UNDERDOGS (V4 conf≥60%, picking underdog)"
+    puts "-" * 80
+    if yesterday_dogs.empty?
+      puts "   No games"
     else
-      puts "#{'Time'.ljust(8)} #{'Game'.ljust(20)} #{'Pick'.ljust(8)} #{'Spread'.rjust(8)} #{'ML Odds'.rjust(10)} #{'GDO Margin'.rjust(12)}"
-      puts "-" * 70
-      
-      ss2_picks.each do |a|
+      yesterday_dogs.each do |a|
+        game = a[:game]
+        result = game.game_result
+        icon = a[:v4_correct] ? "✓" : "✗"
+        score = result&.final? ? "#{result.away_score}-#{result.home_score}" : "pending"
+        puts "   #{icon}      #{a[:v4_pick]&.code.to_s.ljust(5)} spread:#{a[:spread_size].to_s.rjust(5)}  conf:#{a[:v4_confidence]&.round(0).to_s.rjust(3)}%  |  #{score}"
+      end
+    end
+
+    # =========================================================================
+    # ACCURACY STATS
+    # =========================================================================
+    puts "\n\n" + "=" * 80
+    puts "📈 ACCURACY STATS (#{stats_start} to #{stats_end})"
+    puts "=" * 80
+
+    puts "\n🏀 POINTS MODEL"
+    puts "-" * 50
+    puts "   #{'Spread'.ljust(12)} #{'Record'.rjust(12)} #{'Pct'.rjust(8)}"
+    points_stats.each do |stat|
+      puts "   ≥#{stat[:threshold].to_s.ljust(10)} #{stat[:correct].to_s.rjust(5)}/#{stat[:total].to_s.ljust(5)} #{(stat[:accuracy].to_s + '%').rjust(8)}"
+    end
+
+    puts "\n💰 MONEYLINE MODEL"
+    puts "-" * 50
+    ml_stats.each do |stat|
+      short_name = stat[:name].gsub('V4 ', '').gsub(' (conf>=', ' ≥').gsub(', spread>=', ' spd≥').gsub(', fav)', ' fav').gsub(')', '')
+      puts "   #{short_name.ljust(28)} #{stat[:correct].to_s.rjust(4)}/#{stat[:total].to_s.ljust(4)} #{(stat[:accuracy].to_s + '%').rjust(7)}"
+    end
+
+    # =========================================================================
+    # TODAY'S PICKS
+    # =========================================================================
+    puts "\n\n" + "=" * 80
+    puts "🎯 TODAY'S PICKS (#{today})"
+    puts "=" * 80
+
+    # Get accuracy for combined (use the higher threshold - SS2.0 spread>=13)
+    combined_stat = points_stats.find { |s| s[:threshold] == 13 }
+    ml_ss2_stat = ml_stats.find { |s| s[:name].include?('SS 2.0') }
+    ml_ss1_stat = ml_stats.find { |s| s[:name].include?('SS 1.0') }
+    dog_stat = ml_stats.find { |s| s[:name].include?('underdog') }
+
+    # Combined picks (both models agree) - THE BEST
+    puts "\n🔥 COMBINED (Both Models) #{combined_stat ? "#{combined_stat[:correct]}/#{combined_stat[:total]} (#{combined_stat[:accuracy]}%)" : ''}"
+    puts "-" * 80
+    if today_combined.empty?
+      puts "   No games qualify for both models"
+    else
+      puts "   #{'Time'.ljust(6)} #{'Game'.ljust(14)} #{'Pick'.ljust(6)} #{'Spread'.rjust(7)} #{'Conf'.rjust(6)} #{'Margin'.rjust(7)} #{'ML Odds'.rjust(8)}"
+      puts "   " + "-" * 60
+      today_combined.sort_by { |a| a[:game].start_time }.each do |a|
         game = a[:game]
         time = game.start_time.in_time_zone('America/Denver').strftime('%H:%M')
         matchup = "#{game.away_team.code} @ #{game.home_team.code}"
-        ml_odds = a[:moneyline_favorite_odds] ? a[:moneyline_favorite_odds].to_s : "-"
-        
-        puts "#{time.ljust(8)} #{matchup.ljust(20)} #{a[:gdo_pick].code.ljust(8)} #{a[:spread_size].to_s.rjust(8)} #{ml_odds.rjust(10)} #{a[:gdo_margin].round(1).to_s.rjust(12)}"
+        ml_odds = a[:moneyline_favorite_odds] || "-"
+        puts "   #{time.ljust(6)} #{matchup.ljust(14)} #{a[:gdo_pick].code.ljust(6)} #{a[:spread_size].to_s.rjust(7)} #{(a[:v4_confidence]&.round(0).to_s + '%').rjust(6)} #{a[:gdo_margin].round(0).to_s.rjust(7)} #{ml_odds.to_s.rjust(8)}"
       end
     end
 
-    # Today's Picks - Sweet Spot 1.0
-    puts "\n" + "=" * 70
-    puts "⚠️  TODAY'S SWEET SPOT 1.0 PICKS (#{today})"
-    puts "=" * 70
-
-    ss1_picks = today_picks.select { |a| a[:tier] == 1.0 }.sort_by { |a| a[:game].start_time }
-
-    if ss1_picks.empty?
-      puts "No Sweet Spot 1.0 picks today."
+    # Points Model Only (not in combined)
+    points_only = today_points.reject { |a| today_combined.any? { |c| c[:game].id == a[:game].id } }
+    points_1_stat = points_stats.find { |s| s[:threshold] == 10 }
+    puts "\n🏀 POINTS MODEL ONLY — 2.0: #{combined_stat ? "#{combined_stat[:accuracy]}%" : '-'} | 1.0: #{points_1_stat ? "#{points_1_stat[:accuracy]}%" : '-'}"
+    puts "-" * 80
+    if points_only.empty?
+      puts "   No additional games"
     else
-      puts "#{'Time'.ljust(8)} #{'Game'.ljust(20)} #{'Pick'.ljust(8)} #{'Spread'.rjust(8)} #{'ML Odds'.rjust(10)} #{'GDO Margin'.rjust(12)}"
-      puts "-" * 70
-      
-      ss1_picks.each do |a|
+      puts "   #{'Time'.ljust(6)} #{'Game'.ljust(14)} #{'Tier'.ljust(5)} #{'Pick'.ljust(6)} #{'Spread'.rjust(7)} #{'Margin'.rjust(7)} #{'ML Odds'.rjust(8)}"
+      puts "   " + "-" * 60
+      points_only.sort_by { |a| a[:game].start_time }.each do |a|
         game = a[:game]
         time = game.start_time.in_time_zone('America/Denver').strftime('%H:%M')
         matchup = "#{game.away_team.code} @ #{game.home_team.code}"
-        ml_odds = a[:moneyline_favorite_odds] ? a[:moneyline_favorite_odds].to_s : "-"
-        
-        puts "#{time.ljust(8)} #{matchup.ljust(20)} #{a[:gdo_pick].code.ljust(8)} #{a[:spread_size].to_s.rjust(8)} #{ml_odds.rjust(10)} #{a[:gdo_margin].round(1).to_s.rjust(12)}"
+        tier = a[:tier] == 2.0 ? "2.0" : "1.0"
+        ml_odds = a[:moneyline_favorite_odds] || "-"
+        puts "   #{time.ljust(6)} #{matchup.ljust(14)} #{tier.ljust(5)} #{a[:gdo_pick].code.ljust(6)} #{a[:spread_size].to_s.rjust(7)} #{a[:gdo_margin].round(0).to_s.rjust(7)} #{ml_odds.to_s.rjust(8)}"
       end
     end
 
-    # Parlay Rankings
-    puts "\n" + "=" * 70
+    # Moneyline Model Only (not in combined)
+    ml_only = today_ml.reject { |a| today_combined.any? { |c| c[:game].id == a[:game].id } }
+    puts "\n💰 MONEYLINE MODEL ONLY — 2.0: #{ml_ss2_stat ? "#{ml_ss2_stat[:accuracy]}%" : '-'} | 1.0: #{ml_ss1_stat ? "#{ml_ss1_stat[:accuracy]}%" : '-'}"
+    puts "-" * 80
+    if ml_only.empty?
+      puts "   No additional games"
+    else
+      puts "   #{'Time'.ljust(6)} #{'Game'.ljust(14)} #{'Tier'.ljust(5)} #{'Pick'.ljust(6)} #{'Spread'.rjust(7)} #{'Conf'.rjust(6)} #{'ML Odds'.rjust(8)}"
+      puts "   " + "-" * 60
+      ml_only.sort_by { |a| a[:game].start_time }.each do |a|
+        game = a[:game]
+        time = game.start_time.in_time_zone('America/Denver').strftime('%H:%M')
+        matchup = "#{game.away_team.code} @ #{game.home_team.code}"
+        tier = a[:v4_tier] == 2.0 ? "2.0" : "1.0"
+        ml_odds = a[:moneyline_favorite_odds] || "-"
+        puts "   #{time.ljust(6)} #{matchup.ljust(14)} #{tier.ljust(5)} #{a[:v4_pick]&.code.to_s.ljust(6)} #{a[:spread_size].to_s.rjust(7)} #{(a[:v4_confidence]&.round(0).to_s + '%').rjust(6)} #{ml_odds.to_s.rjust(8)}"
+      end
+    end
+
+    # Underdog Picks
+    puts "\n🐕 UNDERDOG PICKS — #{dog_stat ? "#{dog_stat[:correct]}/#{dog_stat[:total]} (#{dog_stat[:accuracy]}%)" : ''}"
+    puts "-" * 80
+    if today_dogs.empty?
+      puts "   No underdog picks"
+    else
+      puts "   #{'Time'.ljust(6)} #{'Game'.ljust(14)} #{'Pick'.ljust(6)} #{'Spread'.rjust(7)} #{'Conf'.rjust(6)} #{'ML Odds'.rjust(8)}"
+      puts "   " + "-" * 55
+      today_dogs.sort_by { |a| a[:game].start_time }.each do |a|
+        game = a[:game]
+        time = game.start_time.in_time_zone('America/Denver').strftime('%H:%M')
+        matchup = "#{game.away_team.code} @ #{game.home_team.code}"
+        ml_odds = a[:moneyline_underdog_odds] || "-"
+        puts "   #{time.ljust(6)} #{matchup.ljust(14)} #{a[:v4_pick]&.code.to_s.ljust(6)} #{a[:spread_size].to_s.rjust(7)} #{(a[:v4_confidence]&.round(0).to_s + '%').rjust(6)} #{ml_odds.to_s.rjust(8)}"
+      end
+    end
+
+    # =========================================================================
+    # PARLAY RANKINGS
+    # =========================================================================
+    puts "\n\n" + "=" * 80
     puts "🎰 PARLAY RANKINGS (#{today})"
-    puts "=" * 70
+    puts "=" * 80
 
-    rankings = analyzer.parlay_rankings(today)
-
-    if rankings.empty?
-      puts "No sweet spot games for parlay."
+    puts "\n🔥 COMBINED (safest - both models agree)"
+    puts "-" * 60
+    if today_combined.empty?
+      puts "   No games"
     else
-      puts "#{'Rank'.ljust(6)} #{'Tier'.ljust(8)} #{'Game'.ljust(20)} #{'Pick'.ljust(8)} #{'Spread'.rjust(8)} #{'GDO Margin'.rjust(12)}"
-      puts "-" * 70
-      
-      rankings.each_with_index do |a, i|
-        game = a[:game]
-        matchup = "#{game.away_team.code} @ #{game.home_team.code}"
-        tier_label = a[:tier] == 2.0 ? "SS2.0" : "SS1.0"
-        
-        puts "#{(i + 1).to_s.ljust(6)} #{tier_label.ljust(8)} #{matchup.ljust(20)} #{a[:gdo_pick].code.ljust(8)} #{a[:spread_size].to_s.rjust(8)} #{a[:gdo_margin].round(1).to_s.rjust(12)}"
+      today_combined.sort_by { |a| -a[:spread_size] }.each_with_index do |a, i|
+        ml_odds = a[:moneyline_favorite_odds] || "-"
+        puts "   #{(i+1).to_s.rjust(2)}. #{a[:gdo_pick].code.ljust(6)} spd:#{a[:spread_size].to_s.rjust(5)}  conf:#{a[:v4_confidence]&.round(0).to_s.rjust(3)}%  margin:#{a[:gdo_margin].round(0).to_s.rjust(3)}  #{ml_odds}"
       end
     end
 
-    puts "\n" + "=" * 70
+    puts "\n🏀 POINTS MODEL"
+    puts "-" * 60
+    rankings = analyzer.parlay_rankings(today)
+    if rankings.empty?
+      puts "   No games"
+    else
+      rankings.each_with_index do |a, i|
+        tier = a[:tier] == 2.0 ? "2.0" : "1.0"
+        ml_odds = a[:moneyline_favorite_odds] || "-"
+        puts "   #{(i+1).to_s.rjust(2)}. [#{tier}] #{a[:gdo_pick].code.ljust(6)} spd:#{a[:spread_size].to_s.rjust(5)}  margin:#{a[:gdo_margin].round(0).to_s.rjust(3)}  #{ml_odds}"
+      end
+    end
+
+    puts "\n💰 MONEYLINE MODEL"
+    puts "-" * 60
+    v4_rankings = analyzer.v4_parlay_rankings(today)
+    if v4_rankings.empty?
+      puts "   No games"
+    else
+      v4_rankings.each_with_index do |a, i|
+        tier = a[:v4_tier] == 2.0 ? "2.0" : "1.0"
+        ml_odds = a[:moneyline_favorite_odds] || "-"
+        puts "   #{(i+1).to_s.rjust(2)}. [#{tier}] #{a[:v4_pick]&.code.to_s.ljust(6)} spd:#{a[:spread_size].to_s.rjust(5)}  conf:#{a[:v4_confidence]&.round(0).to_s.rjust(3)}%  #{ml_odds}"
+      end
+    end
+
+    puts "\n" + "=" * 80
   end
 end

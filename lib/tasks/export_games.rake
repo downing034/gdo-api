@@ -2,12 +2,11 @@
 In the the terminal, this script can be used to export a single days game data
 which will match the #{LEAGUE}_model_tracking.csv format for all but MLB
 
-$ rails games:export_ncaam[2026-01-20,true] | pbcopy
+$ rails games:export_games[ncaam,2026-01-20,true] | pbcopy
 
 pass in true if you want the header, false if you want to exclude it
 
 change the league and data source for the odds if desired
-change the gdo_pred if different pred are desired
 =end
 
 namespace :games do
@@ -27,7 +26,7 @@ namespace :games do
                 .order(:start_time)
     
     if include_header
-      puts "id,date,start_time,away_team,home_team,sl_away_pred,sl_home_pred,gdo_away_pred,gdo_home_pred,away_result,home_result,moneyline_favorite_team,total_line,runline_favorite_team,runline_value,underdog_runline_odds,favorite_runline_odds,over_total_line_odds,under_total_line_odds,underdog_moneyline_odds,favorite_moneyline_odds"
+      puts "id,date,start_time,away_team,home_team,sl_away_pred,sl_home_pred,gdo_away_pred,gdo_home_pred,gdo_v4_favorite,gdo_v4_confidence,away_result,home_result,moneyline_favorite_team,total_line,runline_favorite_team,runline_value,underdog_runline_odds,favorite_runline_odds,over_total_line_odds,under_total_line_odds,underdog_moneyline_odds,favorite_moneyline_odds"
     end
     
     games.each_with_index do |game, index|
@@ -38,12 +37,21 @@ namespace :games do
       home_team = game.home_team.code
       
       sl_pred = game.game_predictions.find { |p| p.model_version == 'sl' }
-      gdo_pred = game.game_predictions.find { |p| p.model_version.start_with?('v1') }
+      
+      # Use V3 for point predictions (best point prediction model: V3 74.2% > V2 72.6% > V1 73.5%)
+      gdo_pred = game.game_predictions.find { |p| p.model_version.start_with?('v3') }
+      
+      # Use V4 for winner predictions (77.8% ML accuracy)
+      v4_pred = game.game_predictions.find { |p| p.model_version.start_with?('v4') }
       
       sl_away = sl_pred&.away_predicted_score&.to_i
       sl_home = sl_pred&.home_predicted_score&.to_i
       gdo_away = gdo_pred&.away_predicted_score&.to_i
       gdo_home = gdo_pred&.home_predicted_score&.to_i
+      
+      # V4 winner prediction
+      v4_favorite = v4_pred&.predicted_winner&.code
+      v4_confidence = v4_pred&.confidence&.round(1)
       
       away_result = game.game_result&.final? ? game.game_result.away_score : nil
       home_result = game.game_result&.final? ? game.game_result.home_score : nil
@@ -68,6 +76,7 @@ namespace :games do
       puts [
         id, game_date, start_time, away_team, home_team,
         sl_away, sl_home, gdo_away, gdo_home,
+        v4_favorite, v4_confidence,
         away_result, home_result,
         ml_fav_team, total_line, spread_fav_team, spread_value,
         underdog_spread_odds, favorite_spread_odds,
