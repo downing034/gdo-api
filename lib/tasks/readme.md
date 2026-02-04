@@ -5,11 +5,11 @@ rails espn:fetch_games[nba,2026-01-23]                               # NBA speci
 rails espn:fetch_games_range[ncaam,2026-01-20,2026-01-25]            # Date range
 
 # NCAAM Data & Model
-rake ncaam:process                                                   # Process CSVs (current season only)
-rake ncaam:process SEASONS=24_25,25_26                               # Process multiple seasons for training
-rake ncaam:process SEASONS=23_24,24_25,25_26                         # Process three seasons when ready
-rake ncaam:train                                                     # Train model
-rake ncaam:refresh                                                   # Process CSVs + train model
+rails ncaam:process                                                  # Process CSVs (current season only)
+rails ncaam:process SEASONS=24_25,25_26                              # Process multiple seasons for training
+rails ncaam:process SEASONS=23_24,24_25,25_26                        # Process three seasons when ready
+rails ncaam:train                                                    # Train model
+rails ncaam:refresh                                                  # Process CSVs + train model
 
 rails ncaam:predict                                                  # Today, both v1 and v2
 rails ncaam:predict[2026-01-27]                                      # Specific date

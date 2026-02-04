@@ -11,7 +11,15 @@ module Ncaam
         data_source_code: 'gdo'
       },
       'v2' => {
-        script: 'predict.py',  # Same interface as v1
+        script: 'predict.py',
+        data_source_code: 'gdo'
+      },
+      'v3' => {
+        script: 'predict.py',
+        data_source_code: 'gdo'
+      },
+      'v4' => {
+        script: 'predict.py',
         data_source_code: 'gdo'
       }
     }.freeze
@@ -97,7 +105,7 @@ module Ncaam
       away_code = game.away_team.code
       home_code = game.home_team.code
       
-      # Build command - same interface for v1 and v2
+      # Build command - same interface for v1, v2, and v3
       cmd = "#{VENV_PYTHON} #{predict_script} --away #{away_code} --home #{home_code}"
       
       result = `#{cmd}`
@@ -115,10 +123,20 @@ module Ncaam
         return
       end
       
-      away_score = prediction_data['away_team']['predicted_score']
-      home_score = prediction_data['home_team']['predicted_score']
+      # Extract scores (may be nil for winner-only models)
+      away_score = prediction_data.dig('away_team', 'predicted_score')
+      home_score = prediction_data.dig('home_team', 'predicted_score')
+      
+      # Extract winner (required)
       winner_code = prediction_data['favorite']
-      winner = winner_code == home_code ? game.home_team : game.away_team
+      winner = if winner_code
+        winner_code == home_code ? game.home_team : game.away_team
+      end
+      
+      # Extract confidence (optional)
+      confidence = prediction_data['confidence'] || 
+                   prediction_data.dig('home_team', 'win_probability')&.then { |p| [p, 100 - p].max } ||
+                   prediction_data.dig('away_team', 'win_probability')&.then { |p| [p, 100 - p].max }
       
       # Determine actual model version (v2 can be v2_vegas or v2_no_vegas)
       actual_model_version = if @model_version == 'v2' && prediction_data.dig('model_info', 'model_type')
@@ -140,6 +158,7 @@ module Ncaam
         away_predicted_score: away_score,
         home_predicted_score: home_score,
         predicted_winner: winner,
+        confidence: confidence,
         generated_at: Time.current
       }
       
@@ -148,7 +167,8 @@ module Ncaam
         @results[:created] += 1
       elsif prediction.away_predicted_score != away_score || 
             prediction.home_predicted_score != home_score ||
-            prediction.predicted_winner_id != winner.id
+            prediction.predicted_winner_id != winner&.id ||
+            prediction.confidence != confidence
         prediction.update!(attrs)
         @results[:updated] += 1
       else
