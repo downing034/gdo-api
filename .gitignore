@@ -30,24 +30,3 @@
 
 # Ignore master key for decrypting credentials and more.
 /config/master.key
-
-# Ignore raw and processed data CSVs
-db/data/**/raw/
-db/data/**/processed/
-db/data/**/stale/
-
-# Ignore trained model files (JSON model weights)
-db/data/**/models/**/*.json
-db/data/**/models/**/__pycache__/
-
-# Ignore Python virtual environments
-db/data/**/venv/
-
-# Ignore model tracking CSVs
-db/data/**/*_model_tracking.csv
-
-# DO NOT ignore these (they should be committed):
-# db/data/**/models/**/predict.py
-# db/data/**/models/**/train_model.py
-# db/data/**/models/**/requirements.txt
-# db/data/**/process.md
